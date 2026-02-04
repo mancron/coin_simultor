@@ -17,10 +17,8 @@ public class HistoryPanel extends JPanel{
 	
 	JPanel coinListContainer,coinHeadPanel;
 	JScrollPane scrollPanel;
-	
 	private HashMap<String, CoinRowPanel> coinMap = new HashMap<>();
 	
-
 	public HistoryPanel() {
 		setLayout(new BorderLayout());
 		
@@ -42,29 +40,51 @@ public class HistoryPanel extends JPanel{
 		add(coinHeadPanel,BorderLayout.NORTH);
 		add(scrollPanel,BorderLayout.CENTER);
 		
-		for(int i = 0; i < 10; i++) {
-		    CoinRowPanel row = new CoinRowPanel("BTC", "95,000,000", "+2.5%");
-		    coinListContainer.add(row);
-		    
-		    // 실시간 업데이트를 위해 Map 등에 저장해두면 좋습니다.
-		    // coinMap.put("BTC", row); 
-		}
+
+		addNewCoin("BTC","95000000","+2.5");
+
+		startRealTimeUpdate();
 		
 	}
 	
-	/*
-	 *사용 
-	 * addNewCoin(name, "0", "0%");
-	 * */
+	private void startRealTimeUpdate() {
+	    Thread updateThread = new Thread(() -> {
+	        while (true) {
+	            try {
+	                // 1. 여기서 실제로는 DB나 API로부터 데이터를 가져와야 함
+	                // 현재는 테스트를 위해 랜덤 값이나 로직을 시뮬레이션
+	                
+	                // 2. Swing UI 업데이트는 반드시 invokeLater 안에서 실행
+	                javax.swing.SwingUtilities.invokeLater(() -> {
+	                    // 예시: 비트코인 가격을 랜덤하게 변경
+	                    double randomPrice = 95000000 + (Math.random() * 100000 - 50000);
+	                    updateCoinPrice("BTC", String.format("%,.0f", randomPrice), "+0.5%");
+	                });
+
+	                Thread.sleep(1000); // 1초마다 반복
+	            } catch (InterruptedException e) {
+	                e.printStackTrace();
+	                break;
+	            }
+	        }
+	    });
+	    updateThread.setDaemon(true); // 프로그램 종료 시 스레드도 자동 종료되도록 설정
+	    updateThread.start();
+	}
 	
-	public void addNewCoin(String symbol, String price, String fluc) {
+	
+	//addNewCoin(name, "0", "0%");
+	
+	public void addNewCoin(String coinName, String price, String fluc) {
 	    // 객체 생성
-	    CoinRowPanel row = new CoinRowPanel(symbol, price, fluc);
+	    CoinRowPanel row = new CoinRowPanel(coinName, price, fluc);
 	    // 리스트 컨테이너에 시각적으로 추가
 	    coinListContainer.add(row);
 	    // 맵에 저장 (나중에 찾기 위함)
-	    coinMap.put(symbol, row);
+	    coinMap.put(coinName, row);
 	}
+	
+	
 	
 	public void updateCoinPrice(String symbol, String newPrice, String newFluc) {
 	    if (coinMap.containsKey(symbol)) {
