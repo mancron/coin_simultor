@@ -1,4 +1,4 @@
-<<<<<<< HEAD
+
 <?xml version="1.0" encoding="UTF-8"?>
 <projectDescription>
 	<name>coin_simultor</name>
@@ -10,7 +10,7 @@
 	<natures>
 	</natures>
 </projectDescription>
-=======
+
 <?xml version="1.0" encoding="UTF-8"?>
 <projectDescription>
 	<name>coin_simultor</name>
@@ -22,4 +22,4 @@
 	<natures>
 	</natures>
 </projectDescription>
->>>>>>> branch 'master' of https://github.com/mancron/coin_simultor.git
+
