@@ -38,8 +38,5 @@ public class CoinRowPanel extends JPanel {
         flucLabel.setForeground(color);
     }
     
-    public String getName() {
-    	return nameLabel.getText();
-    }
     
 }
