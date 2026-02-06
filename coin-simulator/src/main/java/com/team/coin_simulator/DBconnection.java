@@ -1,50 +1,55 @@
 package com.team.coin_simulator;
 
+import com.zaxxer.hikari.HikariConfig;
+import com.zaxxer.hikari.HikariDataSource;
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.SQLException;
 
-public class DBconnection {
-    // DB 접속 정보 (본인의 환경에 맞게 수정)
-    private static final String URL = "jdbc:mysql://localhost:3306/coin_db";
-    private static final String USER = "root";
-    private static final String PASSWORD = "your_password";
+public class DBConnection {
 
-    private Connection connection;
+    private static HikariDataSource dataSource;
 
-    // 1. 생성자를 private으로 선언하여 외부 생성을 차단
-    private DBconnection() {
+    // 정적 초기화 블록 (클래스 로드 시 1회 실행)
+    static {
         try {
-            // JDBC 드라이버 로드
-            Class.forName("com.mysql.cj.jdbc.Driver");
-            // DB 연결 생성
-            this.connection = DriverManager.getConnection(URL, USER, PASSWORD);
-            System.out.println("데이터베이스 연결 성공!");
-        } catch (ClassNotFoundException | SQLException e) {
-            System.err.println("DB 연결 실패: " + e.getMessage());
-        }
-    }
+            HikariConfig config = new HikariConfig();
+            
+            // 1. 필수 설정
+            config.setJdbcUrl("jdbc:mysql://localhost:3306/mydb?characterEncoding=UTF-8&serverTimezone=UTC");
+            config.setUsername("root");
+            config.setPassword("1234");
+            config.setDriverClassName("com.mysql.cj.jdbc.Driver");
 
-    // 2. Bill Pugh Singleton 방식: 멀티스레드 환경에서 안전하고 성능이 좋음
-    private static class Holder {
-        private static final DBconnection INSTANCE = new DBconnection();
-    }
+            // 2. 성능 및 풀 옵션 (데스크탑/시뮬레이터 환경 최적화)
+            config.setMaximumPoolSize(10);      // 최대 커넥션 수 (스윙 앱은 10개면 충분)
+            config.setMinimumIdle(2);           // 유휴 커넥션 최소 유지 수
+            config.setIdleTimeout(30000);       // 유휴 커넥션 생존 시간 (30초)
+            config.setConnectionTimeout(30000); // 커넥션 획득 대기 시간 (30초)
+            
+            // 3. 캐싱 옵션 (성능 향상)
+            config.addDataSourceProperty("cachePrepStmts", "true");
+            config.addDataSourceProperty("prepStmtCacheSize", "250");
+            config.addDataSourceProperty("prepStmtCacheSqlLimit", "2048");
 
-    // 3. 외부에서 인스턴스를 가져오는 유일한 통로
-    public static DBconnection getInstance() {
-        return Holder.INSTANCE;
-    }
-
-    // 4. 연결 객체 반환
-    public Connection getConnection() {
-        try {
-            // 연결이 닫혀있다면 재연결 로직을 추가할 수 있음
-            if (connection == null || connection.isClosed()) {
-                connection = DriverManager.getConnection(URL, USER, PASSWORD);
-            }
-        } catch (SQLException e) {
+            dataSource = new HikariDataSource(config);
+            
+        } catch (Exception e) {
             e.printStackTrace();
+            throw new RuntimeException("DB Connection Pool 초기화 실패", e);
         }
-        return connection;
+    }
+
+    private DBConnection() {} // 인스턴스 생성 방지
+
+    // 커넥션 획득
+    public static Connection getConnection() throws SQLException {
+        return dataSource.getConnection();
+    }
+
+    // 리소스 해제 (애플리케이션 종료 시 호출)
+    public static void close() {
+        if (dataSource != null) {
+            dataSource.close();
+        }
     }
 }
