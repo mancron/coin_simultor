@@ -1,5 +1,6 @@
 package com.team.coin_simulator.chart;
 
+<<<<<<< HEAD
 import java.time.LocalDateTime;
 
 public class CandleDTO {
@@ -85,4 +86,8 @@ public class CandleDTO {
 	public void setUnit(int unit) {
 		this.unit = unit;
 	}	
+=======
+public class CandleDTO {
+
+>>>>>>> branch 'candlechart' of https://github.com/mancron/coin_simultor.git
 }
