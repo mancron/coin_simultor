@@ -15,7 +15,7 @@ public class DBConnection {
             HikariConfig config = new HikariConfig();
             
             // 1. 필수 설정
-            config.setJdbcUrl("jdbc:mysql://localhost:3306/mydb?characterEncoding=UTF-8&serverTimezone=UTC");
+            config.setJdbcUrl("jdbc:mysql://localhost:3306/coin_simulator?characterEncoding=UTF-8&serverTimezone=UTC");
             config.setUsername("root");
             config.setPassword("1234");
             config.setDriverClassName("com.mysql.cj.jdbc.Driver");
