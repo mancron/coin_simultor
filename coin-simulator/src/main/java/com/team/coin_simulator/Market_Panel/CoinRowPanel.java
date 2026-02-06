@@ -32,10 +32,45 @@ public class CoinRowPanel extends JPanel {
     }
 
     // 외부에서 실시간으로 값을 변경할 때 호출하는 메서드
-    public void updateData(String price, String fluc, Color color) {
-        priceLabel.setText(price);
-        flucLabel.setText(fluc);
-        flucLabel.setForeground(color);
+public void updateData(String newPrice, String rawFluc) {
+        
+        // 1. 가격 업데이트
+        priceLabel.setText(newPrice);
+
+        // 2. 등락률 로직 처리
+        try {
+            // 문자열을 숫자로 변환 ("-1.2" -> -1.2)
+            double flucValue = Double.parseDouble(rawFluc);
+            
+            String finalStr = "";
+            Color finalColor = Color.BLACK; // 기본 색상
+
+            if (flucValue > 0) {
+                // 양수일 때: 빨간색, 앞에 "+" 붙이기
+                finalColor = Color.RED;
+                finalStr = "+" + rawFluc + "%"; 
+            } else if (flucValue < 0) {
+                // 음수일 때: 파란색, "-"는 숫자에 이미 있으므로 그대로
+                finalColor = Color.BLUE;
+                finalStr = rawFluc + "%";
+            } else {
+                // 0일 때: 검정색 (또는 회색)
+                finalColor = Color.BLACK;
+                finalStr = "0.00%";
+            }
+
+            // 3. UI 적용
+            flucLabel.setText(finalStr);
+            flucLabel.setForeground(finalColor);
+            
+            // (선택사항) 가격도 등락에 따라 색을 같이 바꿀지?
+            // priceLabel.setForeground(finalColor); 
+
+        } catch (NumberFormatException e) {
+            // 만약 숫자가 아닌 이상한 값이 들어왔을 때 방어 코드
+            flucLabel.setText("-");
+            flucLabel.setForeground(Color.BLACK);
+        }
     }
     
     
