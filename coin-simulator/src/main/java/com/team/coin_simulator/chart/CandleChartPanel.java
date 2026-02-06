@@ -39,10 +39,6 @@ public class CandleChartPanel extends JFrame {
 
         plot = (XYPlot) chart.getPlot();
         plot.setRangeAxisLocation(org.jfree.chart.axis.AxisLocation.TOP_OR_RIGHT);
-        
-        plot.setDomainPannable(true); // X축 이동 활성화
-        plot.setRangePannable(true);  // Y축 이동 활성화
-        
 
         // 렌더러 설정
         CandlestickRenderer renderer = (CandlestickRenderer) plot.getRenderer();

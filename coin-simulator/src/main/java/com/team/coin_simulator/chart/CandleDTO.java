@@ -1,6 +1,5 @@
 package com.team.coin_simulator.chart;
 
-import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 public class CandleDTO {
@@ -85,7 +84,5 @@ public class CandleDTO {
 	}
 	public void setUnit(int unit) {
 		this.unit = unit;
-	}
-	
-    
+	}	
 }
