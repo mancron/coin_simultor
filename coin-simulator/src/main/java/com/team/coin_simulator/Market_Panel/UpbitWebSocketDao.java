@@ -1,11 +1,16 @@
 package com.team.coin_simulator.Market_Panel;
 
+import java.util.stream.Collectors;
+
+import javax.swing.SwingUtilities;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.team.coin_simulator.CoinConfig;
+
 import okhttp3.Response;
 import okhttp3.WebSocket;
 import okhttp3.WebSocketListener;
 import okio.ByteString;
-import javax.swing.SwingUtilities;
 
 public class UpbitWebSocketDao extends WebSocketListener {
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -17,14 +22,20 @@ public class UpbitWebSocketDao extends WebSocketListener {
     }
 
     private String getSubscriptionMessage() {
-        // 여러 코인을 구독하려면 codes 배열에 추가 (예: "KRW-BTC", "KRW-ETH")
-        return "[{\"ticket\":\"test\"},{\"type\":\"ticker\",\"codes\":[\"KRW-BTC\",\"KRW-ETH\",\"KRW-XRP\"]}]";
+        // CoinConfig.getCodes()를 스트림으로 변환
+        String codes = CoinConfig.getCodes().stream()
+                .map(coin -> "\"KRW-" + coin + "\"")
+                .collect(Collectors.joining(","));
+        
+        return String.format("[{\"ticket\":\"test\"},{\"type\":\"ticker\",\"codes\":[%s]}]", codes);
     }
 
     @Override
     public void onOpen(WebSocket webSocket, Response response) {
         webSocket.send(getSubscriptionMessage());
     }
+    
+    
 
     @Override
     public void onMessage(WebSocket webSocket, ByteString bytes) {
@@ -38,7 +49,19 @@ public class UpbitWebSocketDao extends WebSocketListener {
                 String symbol = data.getCode().replace("KRW-", "");
                 
                 // 2. 가격 포맷 (천단위 콤마)
-                String priceStr = String.format("%,.0f", data.getTrade_price());
+                double price = data.getTrade_price();
+                String priceStr;
+
+                if (price < 1) {
+                    // 1원 미만 (예: 0.0005) -> 소수점 4자리 표시
+                    priceStr = String.format("%,.5f", price);
+                } else if (price < 100) {
+                    // 100원 미만 (예: 12.50) -> 소수점 2자리 표시
+                    priceStr = String.format("%,.2f", price);
+                } else {
+                    // 100원 이상 -> 소수점 없이 정수만 표시
+                    priceStr = String.format("%,.0f", price);
+                }
                 
                 // 3. 등락률 계산 및 포맷 (signed_change_rate는 소수점이므로 * 100)
                 String flucStr = String.format("%.2f", data.getSigned_change_rate() * 100);
