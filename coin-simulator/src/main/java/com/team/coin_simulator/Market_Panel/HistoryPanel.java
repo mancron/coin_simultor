@@ -3,11 +3,12 @@ package com.team.coin_simulator.Market_Panel;
 import java.awt.BorderLayout;
 import java.awt.CardLayout;
 import java.awt.Color;
+import java.awt.Dimension;
 import java.awt.GridLayout;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
-import java.awt.Dimension;
+
 import javax.swing.BoxLayout;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
@@ -15,6 +16,11 @@ import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.SwingConstants;
 import javax.swing.border.MatteBorder;
+
+import com.team.coin_simulator.CoinConfig;
+
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
 
 
 
@@ -150,21 +156,27 @@ public class HistoryPanel extends JPanel {
      * 외부에서 코인을 추가할 때 호출하는 메소드
      * @param type 0: 전체, 1: 보유, 2: 관심 (어디 패널에 넣을지 결정)
      */
-    public void addNewCoin(int type, String coinName, String price, String fluc) {
-        CoinRowPanel row = new CoinRowPanel(coinName, price, fluc);
+    public void addNewCoin(int type, String code, String price, String fluc) {
+        // 1. CoinConfig에서 한글 이름 가져오기
+        String krName = CoinConfig.COIN_INFO.getOrDefault(code, code);
+
+        // 2. [핵심] HTML 태그를 사용하여 두 줄로 만들기
+        // <br>: 줄바꿈, <font>: 폰트 스타일 (코드는 조금 작고 회색으로)
+        String displayName = "<html><center>" + krName + "<br><font size='3' color='gray'>" + code + "</font></center></html>";
         
-        // 1. UI 패널에 추가
+        // 3. 패널 생성 시에는 'displayName'(화면용)을 전달
+        CoinRowPanel row = new CoinRowPanel(displayName, price, fluc);
+        
+        // 4. UI 탭에 추가
         switch (type) {
             case 0: allCoinPanel.add(row); break;
             case 1: ownedCoinPanel.add(row); break;
             case 2: interestCoinPanel.add(row); break;
         }
         
-        // 2. 데이터 맵에 추가 (리스트 형태로 관리)
-        // coinMap에 해당 코인 이름이 없으면 새 리스트 생성, 있으면 기존 리스트 가져옴
-        coinMap.computeIfAbsent(coinName, k -> new ArrayList<>()).add(row);
+        // 5. [중요] 데이터 맵의 키는 반드시 'code'(BTC)를 사용해야 웹소켓과 연결됨
+        coinMap.computeIfAbsent(code, k -> new ArrayList<>()).add(row);
         
-        // UI 갱신 (추가된 컴포넌트 즉시 반영)
         revalidate();
         repaint();
     }
@@ -173,10 +185,7 @@ public class HistoryPanel extends JPanel {
     public void updateCoinPrice(String symbol, String newPrice, String newFluc) {
         if (coinMap.containsKey(symbol)) {
             List<CoinRowPanel> rows = coinMap.get(symbol);
-            
             for (CoinRowPanel row : rows) {
-                // 색상 인자(Color.RED) 삭제 -> RowPanel이 알아서 판단함
-                // newFluc에는 "2.5", "-1.2" 같은 순수 숫자 문자열이 들어감
                 row.updateData(newPrice, newFluc); 
             }
         }
@@ -190,50 +199,33 @@ public class HistoryPanel extends JPanel {
         HistoryPanel historyPanel = new HistoryPanel();
         frame.add(historyPanel);
         
+        // DAO 생성 (패널 연결)
+        UpbitWebSocketDao webSocketDao = new UpbitWebSocketDao(historyPanel);
+        
+        //메인 프레임 있으면 없어됨
         frame.pack();
-        frame.setMinimumSize(historyPanel.getMinimumSize()); // 패널 최소 사이즈 적용
+        frame.setMinimumSize(historyPanel.getMinimumSize()); 
         frame.setSize(400, 600);
-        frame.setVisible(true);
-
+        frame.setVisible(true); // 창을 먼저 띄우고 데이터 연결하는 것이 보기 좋습니다.
+        //메인 프레임 있으면 없어됨 
+        
         // --- 1. 초기 데이터 세팅 ---
-        // 전체 탭(0)에 추가
-        historyPanel.addNewCoin(0, "BTC", "95,000,000", "0.0");
-        historyPanel.addNewCoin(0, "ETH", "3,500,000", "0.0");
-        historyPanel.addNewCoin(0, "XRP", "800", "0.0");
+        // (웹소켓에서 코드가 "BTC"로 변환되어 오므로, 여기서도 "BTC"로 등록해야 매칭됨)
+        for (String code : CoinConfig.getCodes()) {
+            // addNewCoin(탭번호, 코드, 가격, 등락률)
+            historyPanel.addNewCoin(0, code, "연결 중...", "0.00");
+        }
         
-        // 관심 탭(2)에 BTC 중복 추가 (테스트용)
-        historyPanel.addNewCoin(2, "BTC", "95,000,000", "0.0"); 
         
-        //탭추가
-        // --- 2. 외부 스레드에서 가격 업데이트 관리 ---
-        Thread simulationThread = new Thread(() -> {
-            double btcPrice = 95000000;
-            double ethPrice = 3500000;
-            
-            while (true) {
-                try {
-                    // 시뮬레이션 로직 (가격 변동)
-                    btcPrice += (Math.random() * 100000 - 50000); //getprice(String coinname)으로 변경
-                    ethPrice += (Math.random() * 5000 - 2500);
-                    
-                    // 변수 캡쳐를 위해 final 처럼 사용해야 하므로 임시 변수 할당
-                    String currentBtc = String.format("%,.0f", btcPrice);
-                    String currentEth = String.format("%,.0f", ethPrice);
-
-                    // Swing UI 업데이트 요청 (invokeLater 필수)
-                    javax.swing.SwingUtilities.invokeLater(() -> {
-                        // 패널에게 "BTC랑 ETH 가격 바꿔!" 라고 명령
-                        historyPanel.updateCoinPrice("BTC", currentBtc, "0.5");
-                        historyPanel.updateCoinPrice("ETH", currentEth, "-0.2");
-                    });
-
-                    Thread.sleep(1000); // 1초 대기
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
-            }
-        });
-        simulationThread.setDaemon(true);
-        simulationThread.start();
+        // --- 2. 웹소켓 연결 ---
+        OkHttpClient client = new OkHttpClient();
+        Request request = new Request.Builder()
+                .url("wss://api.upbit.com/websocket/v1")
+                .build();
+                
+        // 연결 시작 (백그라운드에서 계속 돔)
+        client.newWebSocket(request, webSocketDao);
+        
+        // shutdown() 코드는 삭제했습니다.
     }
 }

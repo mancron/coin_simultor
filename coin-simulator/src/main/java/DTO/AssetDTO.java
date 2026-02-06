@@ -20,8 +20,7 @@ public class AssetDTO {
     // --- 생성자 (Constructor) ---
 
     // 기본 생성자 (필수)
-    public AssetDTO() {
-    }
+    public AssetDTO() {}
 
     // 전체 필드 생성자 (테스트 및 객체 생성용)
     public AssetDTO(String userId, String currency, Long sessionId, 
