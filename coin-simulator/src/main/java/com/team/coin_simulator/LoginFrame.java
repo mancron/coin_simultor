@@ -60,4 +60,11 @@ public class LoginFrame extends JFrame {
         add(panel);
         setVisible(true);
     }
+    
+    
+    public static void main(String[] args) {
+        SwingUtilities.invokeLater(() -> {
+            new LoginFrame();
+        });
+    }
 }
