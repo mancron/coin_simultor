@@ -2,6 +2,10 @@ package com.team.coin_simulator.Market_Order;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -38,5 +42,5 @@ public class AssetOrderModel {
 			this.price=price;
 			this.quantity=quantity;
 		}
-	}	
+	}
 }
