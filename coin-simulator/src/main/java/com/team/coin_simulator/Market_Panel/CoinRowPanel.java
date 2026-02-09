@@ -72,6 +72,11 @@ public void updateData(String newPrice, String rawFluc) {
             flucLabel.setForeground(Color.BLACK);
         }
     }
+
+	//OrderPanel에 불러올 시장가
+	public String getPrice() {
+	    return priceLabel.getText();
+	}
     
     
 }

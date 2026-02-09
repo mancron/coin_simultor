@@ -326,7 +326,7 @@ public class OrderPanel extends JPanel {
     //코인 현재가 전달 받는 메서드 추가
     public void setSelectedCoin(String code, String price) {
     	// 1. 가격 필드 업데이트 (콤마 제거 후 숫자만 입력)
-        String cleanPrice = price.replace(",", "");
+    	String cleanPrice = price.replace(",", "").replace(" KRW", "").trim();
         priceField.setText(cleanPrice);
         
         // 2. 주문 가능 잔고 라벨 업데이트를 위해 sideIdx 체크 및 갱신

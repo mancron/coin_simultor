@@ -18,6 +18,7 @@ import javax.swing.SwingConstants;
 import javax.swing.border.MatteBorder;
 
 import com.team.coin_simulator.CoinConfig;
+import com.team.coin_simulator.Market_Order.OrderPanel;
 
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -48,9 +49,14 @@ public class HistoryPanel extends JPanel {
     // 데이터 관리: 코인 심볼 하나에 여러 개의 RowPanel(전체탭용, 관심탭용 등)이 매핑될 수 있음
     private HashMap<String, List<CoinRowPanel>> coinMap = new HashMap<>();
     private List<TabButton> tabButtons = new ArrayList<>();
+    
+    //OrderPanel과 연결
+    private OrderPanel orderPanel;
 
     
-    public HistoryPanel() {
+    public HistoryPanel(OrderPanel orderPanel) {
+    	this.orderPanel = orderPanel;
+    	
         setLayout(new BorderLayout());
         setBackground(Color.WHITE);
         setMinimumSize(new Dimension(300, 500));
@@ -167,6 +173,17 @@ public class HistoryPanel extends JPanel {
         // 3. 패널 생성 시에는 'displayName'(화면용)을 전달
         CoinRowPanel row = new CoinRowPanel(displayName, price, fluc);
         
+        //OrderPanel과 연결하기 위해 클릭 이벤트 리스너 추가
+        row.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override
+            public void mouseClicked(java.awt.event.MouseEvent e) {
+                if (orderPanel != null) {
+                    // 클릭된 row의 현재가와 코드를 OrderPanel로 전달
+                    orderPanel.setSelectedCoin(code, row.getPrice());
+                }
+            }
+        });
+        
         // 4. UI 탭에 추가
         switch (type) {
             case 0: allCoinPanel.add(row); break;
@@ -194,9 +211,13 @@ public class HistoryPanel extends JPanel {
     public static void main(String[] args) {
         JFrame frame = new JFrame("코인 시뮬레이터");
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        frame.setLayout(new GridLayout(1, 2));//반반씩 배치
         
-        // 패널 생성
-        HistoryPanel historyPanel = new HistoryPanel();
+        //주문 패널 먼저 생성
+        OrderPanel orderPanel = new OrderPanel();
+        
+        // 주문 패널을 인자로 주면서 히스토리 패널 생성
+        HistoryPanel historyPanel = new HistoryPanel(orderPanel);
         frame.add(historyPanel);
         
         // DAO 생성 (패널 연결)
