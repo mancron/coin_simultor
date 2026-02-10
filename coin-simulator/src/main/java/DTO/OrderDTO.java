@@ -5,7 +5,95 @@ import java.math.BigDecimal;
 import com.google.protobuf.Timestamp;
 
 public class OrderDTO {
-    // 1. PK
+    public Long getOrderId() {
+		return orderId;
+	}
+
+	public void setOrderId(Long orderId) {
+		this.orderId = orderId;
+	}
+
+	public String getUserId() {
+		return userId;
+	}
+
+	public void setUserId(String userId) {
+		this.userId = userId;
+	}
+
+	public Long getSessionId() {
+		return sessionId;
+	}
+
+	public void setSessionId(Long sessionId) {
+		this.sessionId = sessionId;
+	}
+
+	public String getMarket() {
+		return market;
+	}
+
+	public void setMarket(String market) {
+		this.market = market;
+	}
+
+	public String getSide() {
+		return side;
+	}
+
+	public void setSide(String side) {
+		this.side = side;
+	}
+
+	public String getType() {
+		return type;
+	}
+
+	public void setType(String type) {
+		this.type = type;
+	}
+
+	public BigDecimal getOriginalPrice() {
+		return originalPrice;
+	}
+
+	public void setOriginalPrice(BigDecimal originalPrice) {
+		this.originalPrice = originalPrice;
+	}
+
+	public BigDecimal getOriginalVolume() {
+		return originalVolume;
+	}
+
+	public void setOriginalVolume(BigDecimal originalVolume) {
+		this.originalVolume = originalVolume;
+	}
+
+	public BigDecimal getRemainingVolume() {
+		return remainingVolume;
+	}
+
+	public void setRemainingVolume(BigDecimal remainingVolume) {
+		this.remainingVolume = remainingVolume;
+	}
+
+	public String getStatus() {
+		return status;
+	}
+
+	public void setStatus(String status) {
+		this.status = status;
+	}
+
+	public Timestamp getCreatedAt() {
+		return createdAt;
+	}
+
+	public void setCreatedAt(Timestamp createdAt) {
+		this.createdAt = createdAt;
+	}
+
+	// 1. PK
     private Long orderId;
 
     // 2. 식별자
