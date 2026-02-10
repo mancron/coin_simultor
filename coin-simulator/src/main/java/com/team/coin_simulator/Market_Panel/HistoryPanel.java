@@ -173,16 +173,25 @@ public class HistoryPanel extends JPanel {
         // 3. 패널 생성 시에는 'displayName'(화면용)을 전달
         CoinRowPanel row = new CoinRowPanel(displayName, price, fluc);
         
-        //OrderPanel과 연결하기 위해 클릭 이벤트 리스너 추가
-        row.addMouseListener(new java.awt.event.MouseAdapter() {
+        //클릭 이벤트를 처리하는 공통 리스너 생성
+        java.awt.event.MouseAdapter commonListener = new java.awt.event.MouseAdapter() {
             @Override
             public void mouseClicked(java.awt.event.MouseEvent e) {
                 if (orderPanel != null) {
-                    // 클릭된 row의 현재가와 코드를 OrderPanel로 전달
+                    // 클릭 효과 (잠깐 배경색 변경 등) 주면 더 좋음
+                    System.out.println("클릭됨: " + code); 
                     orderPanel.setSelectedCoin(code, row.getPrice());
                 }
             }
-        });
+        };
+
+        // 1. 패널 자체에 리스너 부착
+        row.addMouseListener(commonListener);
+        
+        // 2. [중요] 패널 내부의 모든 컴포넌트(라벨들)에도 리스너 부착
+        for (java.awt.Component c : row.getComponents()) {
+            c.addMouseListener(commonListener);
+        }
         
         // 4. UI 탭에 추가
         switch (type) {
@@ -200,53 +209,60 @@ public class HistoryPanel extends JPanel {
     
    
     public void updateCoinPrice(String symbol, String newPrice, String newFluc) {
+        // 1. 리스트(CoinRowPanel) 갱신 (기존 코드)
         if (coinMap.containsKey(symbol)) {
             List<CoinRowPanel> rows = coinMap.get(symbol);
             for (CoinRowPanel row : rows) {
                 row.updateData(newPrice, newFluc); 
             }
         }
+        
+        // 2. [추가] 주문 패널(OrderPanel)에도 실시간 가격 전달
+        if (orderPanel != null) {
+            // "지금 들어온 이 코인(symbol) 가격이 이거(newPrice)래. 너가 선택한 코인이면 업데이트 해!"
+            orderPanel.updateRealTimePrice(symbol, newPrice);
+        }
     }
     
     public static void main(String[] args) {
         JFrame frame = new JFrame("코인 시뮬레이터");
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        frame.setLayout(new GridLayout(1, 2));//반반씩 배치
+        frame.setLayout(new GridLayout(1, 2)); // 화면을 반반 나눔
+
+        // ------------------------------------------------------
+        // [핵심] 여기서 딱 한 번만 생성해서 서로 연결합니다!
+        // ------------------------------------------------------
         
-        //주문 패널 먼저 생성
+        // 1. 주문 패널(OrderPanel)을 먼저 만듭니다. (이게 유일한 주문창!)
         OrderPanel orderPanel = new OrderPanel();
         
-        // 주문 패널을 인자로 주면서 히스토리 패널 생성
+        // 2. 히스토리 패널을 만들 때, 위에서 만든 주문 패널을 넘겨줍니다.
+        //    (이제 히스토리 패널은 이 주문 패널에게 명령을 내릴 수 있습니다)
         HistoryPanel historyPanel = new HistoryPanel(orderPanel);
-        frame.add(historyPanel);
         
-        // DAO 생성 (패널 연결)
+        // 3. 화면에 붙일 때도 방금 만든 그 변수들을 그대로 씁니다.
+        frame.add(historyPanel); // 왼쪽
+        frame.add(orderPanel);   // 오른쪽 (절대 new OrderPanel() 하지 마세요!)
+        
+        // ------------------------------------------------------
+
+        // DAO 연결 (웹소켓)
         UpbitWebSocketDao webSocketDao = new UpbitWebSocketDao(historyPanel);
         
-        //메인 프레임 있으면 없어됨
         frame.pack();
-        frame.setMinimumSize(historyPanel.getMinimumSize()); 
-        frame.setSize(400, 600);
-        frame.setVisible(true); // 창을 먼저 띄우고 데이터 연결하는 것이 보기 좋습니다.
-        //메인 프레임 있으면 없어됨 
-        
-        // --- 1. 초기 데이터 세팅 ---
-        // (웹소켓에서 코드가 "BTC"로 변환되어 오므로, 여기서도 "BTC"로 등록해야 매칭됨)
+        frame.setSize(800, 600);
+        frame.setVisible(true);
+
+        // 초기 데이터 세팅
         for (String code : CoinConfig.getCodes()) {
-            // addNewCoin(탭번호, 코드, 가격, 등락률)
             historyPanel.addNewCoin(0, code, "연결 중...", "0.00");
         }
         
-        
-        // --- 2. 웹소켓 연결 ---
+        // 웹소켓 시작
         OkHttpClient client = new OkHttpClient();
         Request request = new Request.Builder()
                 .url("wss://api.upbit.com/websocket/v1")
                 .build();
-                
-        // 연결 시작 (백그라운드에서 계속 돔)
         client.newWebSocket(request, webSocketDao);
-        
-        // shutdown() 코드는 삭제했습니다.
     }
 }

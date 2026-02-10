@@ -20,9 +20,14 @@ public class OrderPanel extends JPanel {
     private JTextField priceField, qtyField, marketAmountField;
     private JLabel valAvailable, valTotal;
     private JButton btnAction;
+    private JLabel lblSelectedCoinInfo; 
 
+    private JLabel valExpected; // 예상 체결 수량/금액 표시 라벨
+    private String selectedCoinCode = "BTC"; // 기본값
+    private BigDecimal currentSelectedPrice = BigDecimal.ZERO; // HistoryPanel에서 받은 현재가 저장
     private int sideIdx = 0;
     private boolean isLimitMode = true;
+    
     private final Color COLOR_BID = new Color(200, 30, 30);
     private final Color COLOR_ASK = new Color(30, 70, 200);
 
@@ -58,6 +63,13 @@ public class OrderPanel extends JPanel {
         tradePanel.setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
         tradePanel.setBackground(Color.WHITE);
 
+        //현재 어떤 코인을 거래 중인지 보여주는 정보창
+        lblSelectedCoinInfo = new JLabel("BTC - 비트코인");
+        lblSelectedCoinInfo.setFont(new Font("맑은 고딕", Font.BOLD, 16));
+        lblSelectedCoinInfo.setAlignmentX(Component.CENTER_ALIGNMENT);
+        tradePanel.add(lblSelectedCoinInfo);
+        tradePanel.add(Box.createVerticalStrut(10));
+        
         // 3-1. 지정가/시장가 모드 선택 버튼
         JPanel modePanel = new JPanel(new GridLayout(1, 2, 5, 0));
         modePanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 40));
@@ -146,26 +158,113 @@ public class OrderPanel extends JPanel {
         btnBid.addActionListener(e -> { switchSide(0, btnBid, btnAsk, btnEdit); cardLayout.show(inputCardPanel, "TRADE"); });
         btnAsk.addActionListener(e -> { switchSide(1, btnAsk, btnBid, btnEdit); cardLayout.show(inputCardPanel, "TRADE"); });
         btnEdit.addActionListener(e -> { switchSide(-1, btnEdit, btnBid, btnAsk); refreshEditList(); cardLayout.show(inputCardPanel, "EDIT"); });
-        btnLimit.addActionListener(e -> { isLimitMode = true; btnLimit.setSelected(true); btnMarket.setSelected(false); tradeCardLayout.show(tradeInputPanel, "LIMIT"); });
-        btnMarket.addActionListener(e -> { isLimitMode = false; btnMarket.setSelected(true); btnLimit.setSelected(false); tradeCardLayout.show(tradeInputPanel, "MARKET"); });
-        btnAction.addActionListener(e -> handleMockOrder());
+        btnLimit.addActionListener(e -> { 
+            isLimitMode = true; 
+            btnLimit.setSelected(true); btnMarket.setSelected(false); 
+            tradeCardLayout.show(tradeInputPanel, "LIMIT"); 
+            updateOrderSummary();
+        });
+        btnMarket.addActionListener(e -> { 
+            isLimitMode = false; 
+            btnMarket.setSelected(true); btnLimit.setSelected(false); 
+            tradeCardLayout.show(tradeInputPanel, "MARKET"); 
+            updateMarketCalculation(); // 모드 변경 시 즉시 계산
+        });
+        
+        btnAction.addActionListener(e -> handleOrderAction());
+        
+        // 초기 잔고 표시
+        updateInfoLabel();
+    }
+    
+    public void setSelectedCoin(String code, String price) {
+        // 1. 가격 파싱
+        String cleanPrice = price.replace(",", "").replace(" KRW", "").trim();
+        if (cleanPrice.equals("연결중...") || cleanPrice.isEmpty()) return;
+
+        // 2. 상태 업데이트
+        this.selectedCoinCode = code;
+        this.currentSelectedPrice = new BigDecimal(cleanPrice);
+
+        // 3. UI 반영
+        // 3-1. 상단 코인 이름 변경
+        lblSelectedCoinInfo.setText(code + " - 현재가 " + String.format("%,.0f", currentSelectedPrice));
+        
+        // 3-2. 지정가 필드에 가격 자동 입력
+        if (!priceField.hasFocus()) { // 사용자가 입력 중이 아닐 때만 업데이트
+            priceField.setText(cleanPrice);
+        }
+
+        // 3-3. 각종 계산 로직 수행
+        updateInfoLabel();       // 잔고 표시 (BTC -> ETH 등으로 변경될 수 있으므로)
+        updateOrderSummary();    // 지정가 총액 계산
+        updateMarketCalculation(); // 시장가 예상 수량 계산
+    }
+    
+    //실시간 시세 반영 메서드
+    public void updateRealTimePrice(String code, String newPrice) {
+        // 1. 지금 선택된 코인이 아니면 무시 (BTC 보고 있는데 ETH 가격 오면 안 되니까)
+        if (!this.selectedCoinCode.equals(code)) return;
+
+        // 2. 가격 파싱
+        String cleanPrice = newPrice.replace(",", "").replace(" KRW", "").trim();
+        if (cleanPrice.isEmpty() || cleanPrice.equals("연결중...")) return;
+
+        BigDecimal priceBD = new BigDecimal(cleanPrice);
+        this.currentSelectedPrice = priceBD; // 내부 기준가 갱신
+
+        // 3. 상단 정보 라벨 갱신 (여기는 실시간으로 계속 바뀜)
+        lblSelectedCoinInfo.setText(code + " - 현재가 " + String.format("%,.0f", priceBD));
+
+        // 4. 시장가 모드라면 예상 수량/금액 실시간 재계산
+        if (!isLimitMode) {
+            updateMarketCalculation();
+        }
+    }
+
+    // 정보 갱신 (주문 가능 잔고)
+    private void updateInfoLabel() {
+        String assetCode;
+        if (sideIdx == 0) { // 매수: KRW 필요
+            assetCode = "KRW";
+        } else { // 매도: 해당 코인(BTC, ETH 등) 필요
+            assetCode = selectedCoinCode; 
+        }
+
+        BigDecimal balance = mockBalance.getOrDefault(assetCode, BigDecimal.ZERO);
+        
+        String format = assetCode.equals("KRW") ? "%,.0f" : "%.8f";
+        valAvailable.setText(String.format(format + " %s", balance, assetCode));
     }
     
 
+ // 2. 지정가 주문 시 최대 가능 수량 업데이트 (OrderCalc 연동)
     private void updateMaxVolume() {
-        // 필요 시 OrderCalc를 통해 계산 로직 추가
+        if (sideIdx == 0 && isLimitMode) { // 매수 & 지정가 모드일 때
+            String priceText = priceField.getText();
+            BigDecimal krwBalance = mockBalance.get("KRW");
+            
+            // 현재 잔고로 살 수 있는 최대 수량을 계산하여 로그나 툴팁 등에 활용 가능
+            String maxQty = OrderCalc.getAvailableVolumeString(priceText, krwBalance);
+            // 필요 시 UI에 "최대 가능: 0.123 BTC" 라벨을 추가하여 표시하면 좋습니다.
+        }
     }
 
+ // 3. 주문 요약 업데이트 수정
     private void updateOrderSummary() {
-    	updateInfoLabel();
-    	try {
+        updateInfoLabel();
+        updateMarketCalculation(); // 시장가 계산도 함께 갱신
+        
+        try {
             String pStr = priceField.getText().replace(",", "").trim();
             String qStr = qtyField.getText().replace(",", "").trim();
+            
             if (!pStr.isEmpty() && !qStr.isEmpty()) {
                 BigDecimal price = new BigDecimal(pStr);
                 BigDecimal qty = new BigDecimal(qStr);
-                BigDecimal total = price.multiply(qty);
-                // valTotal의 텍스트를 업데이트하도록 수정
+                
+                // 단순 총액 계산 (수수료 제외)
+                BigDecimal total = OrderCalc.calcTotalCost(price, qty);
                 SwingUtilities.invokeLater(() -> valTotal.setText(String.format("%,.2f KRW", total)));
             } else {
                 valTotal.setText("0.00 KRW");
@@ -203,7 +302,9 @@ public class OrderPanel extends JPanel {
                 order.setOriginalVolume(qty);
                 order.setRemainingVolume(qty);
                 order.setStatus("WAIT");
+                //리스트에 담기
                 openOrders.add(order);
+                refreshEditList();
                 updateInfoLabel();
                 JOptionPane.showMessageDialog(this, "지정가 주문 접수!");
             } else {
@@ -214,12 +315,30 @@ public class OrderPanel extends JPanel {
         }
     }
 
+ // 4. 시장가 체결 실행 로직 수정
     private void handleMarketOrderExecution() {
-        BigDecimal currentPrice = new BigDecimal("95000000");
-        BigDecimal amount = new BigDecimal(marketAmountField.getText());
-        BigDecimal volume = amount.divide(currentPrice, 8, BigDecimal.ROUND_DOWN);
-        mockBalance.put("KRW", mockBalance.get("KRW").subtract(amount));
-        JOptionPane.showMessageDialog(this, String.format("시장가 체결 완료!\n체결가: %s\n수량: %s", currentPrice, volume));
+        try {
+            if (currentSelectedPrice.compareTo(BigDecimal.ZERO) <= 0) {
+                throw new RuntimeException("시세를 먼저 선택해주세요.");
+            }
+
+            BigDecimal amount = new BigDecimal(marketAmountField.getText().replace(",", ""));
+            
+            // 실제 체결될 수량 계산 (수수료 반영)
+            BigDecimal volume = OrderCalc.calculateMarketBuyQuantity(amount, currentSelectedPrice);
+
+            if (sideIdx == 0) { // 매수
+                if (mockBalance.get("KRW").compareTo(amount) < 0) throw new RuntimeException("잔고가 부족합니다.");
+                mockBalance.put("KRW", mockBalance.get("KRW").subtract(amount));
+                // 코인 잔고 증가 로직 필요 (현재 mockBalance에 BTC 등 추가)
+            }
+            
+            JOptionPane.showMessageDialog(this, String.format("시장가 체결 완료!\n체결가: %,.2f\n수량: %s", currentSelectedPrice, volume));
+            updateInfoLabel();
+            
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(this, "시장가 주문 오류: " + ex.getMessage());
+        }
     }
 
     private void refreshEditList() {
@@ -251,18 +370,23 @@ public class OrderPanel extends JPanel {
         center.add(new JLabel(String.format("%,.2f KRW", order.getOriginalPrice()), SwingConstants.RIGHT));
         center.add(new JLabel("수량"));
         center.add(new JLabel(order.getOriginalVolume() + " BTC", SwingConstants.RIGHT));
+        
+        JPanel btnPanel = new JPanel(new GridLayout(1, 2, 5, 0)); // 1행 2열
+        btnPanel.setBackground(Color.WHITE);
 
+        // [추가] 정정 버튼
+        JButton btnModify = new JButton("정정");
+        btnModify.setBackground(new Color(240, 240, 240));
+        btnModify.addActionListener(e -> showModifyDialog(order)); // 정정 팝업 호출
+
+        // [기존] 취소 버튼
         JButton btnCancel = new JButton("취소");
-        btnCancel.addActionListener(e -> {
-            String curr = order.getSide().equals("BID") ? "KRW" : "BTC";
-            BigDecimal amt = order.getSide().equals("BID") ? order.getOriginalPrice().multiply(order.getOriginalVolume()) : order.getOriginalVolume();
-            mockLocked.put(curr, mockLocked.get(curr).subtract(amt));
-            mockBalance.put(curr, mockBalance.get(curr).add(amt));
-            openOrders.remove(order);
-            refreshEditList();
-            updateInfoLabel();
-            JOptionPane.showMessageDialog(this, "주문이 취소되었습니다.");
-        });
+        btnCancel.setBackground(new Color(255, 230, 230));
+        btnCancel.setForeground(Color.RED);
+        btnCancel.addActionListener(e -> cancelOrder(order)); // 취소 로직 분리
+        
+        btnPanel.add(btnModify);
+        btnPanel.add(btnCancel);
 
         item.add(typeLbl, BorderLayout.NORTH);
         item.add(center, BorderLayout.CENTER);
@@ -270,13 +394,88 @@ public class OrderPanel extends JPanel {
         return item;
     }
 
-    private void updateInfoLabel() {
-    	String currency = (sideIdx == 1) ? "BTC" : "KRW";
-        BigDecimal balance = mockBalance.get(currency);
-        if (balance == null) balance = BigDecimal.ZERO;
-        String format = currency.equals("KRW") ? "%,.2f" : "%,.8f";
-        final String resultText = String.format(format + " " + currency, balance);
-        SwingUtilities.invokeLater(() -> valAvailable.setText(resultText));
+    private void cancelOrder(OrderDTO order) {
+        String curr = order.getSide().equals("BID") ? "KRW" : "BTC"; // 매수면 KRW, 매도면 BTC
+        
+        // 잠겨있던 자산 계산
+        BigDecimal lockedAmt;
+        if (order.getSide().equals("BID")) {
+            // 매수: 가격 * 수량만큼 잠김
+            lockedAmt = order.getOriginalPrice().multiply(order.getOriginalVolume());
+        } else {
+            // 매도: 수량만큼 잠김
+            lockedAmt = order.getOriginalVolume();
+        }
+
+        // 자산 복구 (Locked 차감, Balance 증가)
+        mockLocked.put(curr, mockLocked.get(curr).subtract(lockedAmt));
+        mockBalance.put(curr, mockBalance.get(curr).add(lockedAmt));
+
+        // 리스트에서 삭제 및 갱신
+        openOrders.remove(order);
+        refreshEditList();
+        updateInfoLabel();
+        JOptionPane.showMessageDialog(this, "주문이 취소되었습니다.");
+    }
+    
+    private void showModifyDialog(OrderDTO order) {
+        // 1. 입력 팝업 UI 구성
+        JPanel panel = new JPanel(new GridLayout(2, 2, 5, 5));
+        JTextField txtPrice = new JTextField(order.getOriginalPrice().toString());
+        JTextField txtQty = new JTextField(order.getOriginalVolume().toString());
+        
+        panel.add(new JLabel("정정 가격(KRW):"));
+        panel.add(txtPrice);
+        panel.add(new JLabel("정정 수량(BTC):"));
+        panel.add(txtQty);
+
+        int result = JOptionPane.showConfirmDialog(this, panel, "주문 정정", JOptionPane.OK_CANCEL_OPTION);
+
+        if (result == JOptionPane.OK_OPTION) {
+            try {
+                BigDecimal newPrice = new BigDecimal(txtPrice.getText().replace(",", ""));
+                BigDecimal newQty = new BigDecimal(txtQty.getText().replace(",", ""));
+
+                // 2. 자산 변동 계산 로직
+                // (1) 먼저 기존 주문을 '가상 취소'하여 자산을 돌려받음
+                String curr = order.getSide().equals("BID") ? "KRW" : "BTC";
+                BigDecimal oldLockedAmt = order.getSide().equals("BID") ? 
+                        order.getOriginalPrice().multiply(order.getOriginalVolume()) : order.getOriginalVolume();
+
+                BigDecimal currentLocked = mockLocked.getOrDefault(curr, BigDecimal.ZERO);
+                BigDecimal currentBalance = mockBalance.getOrDefault(curr, BigDecimal.ZERO);
+
+                // 일단 복구 (임시)
+                BigDecimal tempBalance = currentBalance.add(oldLockedAmt);
+                BigDecimal tempLocked = currentLocked.subtract(oldLockedAmt);
+
+                // (2) 새로운 주문 금액 계산
+                BigDecimal newRequiredAmt = order.getSide().equals("BID") ? 
+                        newPrice.multiply(newQty) : newQty;
+
+                // (3) 잔고 부족 체크
+                if (tempBalance.compareTo(newRequiredAmt) < 0) {
+                    throw new RuntimeException("정정 주문을 위한 잔고가 부족합니다.\n필요: " + newRequiredAmt + " / 보유: " + tempBalance);
+                }
+
+                // (4) 실제 반영 (기존 것 취소 확정 + 새 것 잠금)
+                mockBalance.put(curr, tempBalance.subtract(newRequiredAmt));
+                mockLocked.put(curr, tempLocked.add(newRequiredAmt));
+
+                // (5) 주문 정보 업데이트
+                order.setOriginalPrice(newPrice);
+                order.setOriginalVolume(newQty);
+                order.setRemainingVolume(newQty); // 미체결 상태라면 잔여량도 초기화
+
+                // UI 갱신
+                refreshEditList();
+                updateInfoLabel();
+                JOptionPane.showMessageDialog(this, "주문이 정정되었습니다.");
+
+            } catch (Exception ex) {
+                JOptionPane.showMessageDialog(this, "정정 실패: " + ex.getMessage(), "오류", JOptionPane.ERROR_MESSAGE);
+            }
+        }
     }
 
     private void switchSide(int side, TabButton selected, TabButton un1, TabButton un2) {
@@ -290,53 +489,160 @@ public class OrderPanel extends JPanel {
         }
         updateInfoLabel();
     }
-    
+
     private JPanel createLimitForm() {
-        JPanel p = new JPanel();
-        p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
-        p.setBackground(Color.WHITE);
-        p.add(new JLabel("주문가격 (KRW)"));
-        priceField = new JTextField("95000000");
-        styleField(priceField);
-        p.add(priceField);
-        p.add(Box.createVerticalStrut(15));
-        p.add(new JLabel("주문수량 (BTC)"));
-        qtyField = new JTextField("0.1");
-        styleField(qtyField);
-        p.add(qtyField);
+        JPanel p = new JPanel(); p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS)); p.setBackground(Color.WHITE);
+        p.add(new JLabel("주문가격 (KRW)")); priceField = new JTextField(); styleField(priceField); p.add(priceField);
+        p.add(Box.createVerticalStrut(10));
+        p.add(new JLabel("주문수량")); qtyField = new JTextField(); styleField(qtyField); p.add(qtyField);
         return p;
+    }
+    
+ // 1. 시장가 실시간 계산 로직 수정 (OrderCalc 연동)
+    private void updateMarketCalculation() {
+        try {
+            String amtStr = marketAmountField.getText().replace(",", "").trim();
+            
+            if (currentSelectedPrice.compareTo(BigDecimal.ZERO) <= 0 || amtStr.isEmpty()) {
+                valExpected.setText(sideIdx == 0 ? "예상 수량: -" : "예상 금액: -");
+                return;
+            }
+
+            BigDecimal inputVal = new BigDecimal(amtStr);
+            
+            if (sideIdx == 0) { // 매수 (금액 입력 -> 수량 계산)
+                BigDecimal expectedQty = OrderCalc.calculateMarketBuyQuantity(inputVal, currentSelectedPrice);
+                valExpected.setText("예상 수량: " + expectedQty.toPlainString() + " " + selectedCoinCode);
+            } else { // 매도 (수량 입력 -> 금액 계산, *시장가 매도는 보통 수량을 입력함)
+                // 시뮬레이터 편의상 매도도 금액(평가금) 기준으로 판다고 가정하거나, 
+                // 혹은 UI를 수량 입력으로 바꿔야 하지만 여기선 기존 로직 유지
+                // 예: 10,000원어치 팔겠다 -> (10000/현재가) 만큼 팜
+                BigDecimal qtyToSell = inputVal.divide(currentSelectedPrice, 8, BigDecimal.ROUND_DOWN);
+                BigDecimal expectedKRW = OrderCalc.calculateMarketSellAmount(qtyToSell, currentSelectedPrice);
+                valExpected.setText("예상 수령: " + String.format("%,.0f", expectedKRW) + " KRW");
+            }
+        } catch (Exception e) {
+            valExpected.setText("계산 불가");
+        }
+    }
+    
+    
+    
+    
+    // 주문 실행 (매수/매도 버튼 클릭)
+    private void handleOrderAction() {
+        if (isLimitMode) {
+            handleLimitOrder();
+        } else {
+            handleMarketOrder();
+        }
+    }
+    
+    private void handleMarketOrder() {
+        try {
+            if (currentSelectedPrice.compareTo(BigDecimal.ZERO) <= 0) {
+                throw new RuntimeException("시세를 먼저 선택해주세요.");
+            }
+            
+            BigDecimal inputAmount = new BigDecimal(marketAmountField.getText().replace(",", ""));
+            
+            // 실제 체결 로직
+            if (sideIdx == 0) { // 매수
+                // 잔고 체크
+                BigDecimal krwBal = mockBalance.getOrDefault("KRW", BigDecimal.ZERO);
+                if (krwBal.compareTo(inputAmount) < 0) throw new RuntimeException("KRW 잔고가 부족합니다.");
+                
+                // 수수료 포함된 구매 가능 수량 계산
+                BigDecimal buyQty = OrderCalc.calculateMarketBuyQuantity(inputAmount, currentSelectedPrice);
+                
+                // 잔고 차감 및 코인 추가
+                mockBalance.put("KRW", krwBal.subtract(inputAmount));
+                BigDecimal coinBal = mockBalance.getOrDefault(selectedCoinCode, BigDecimal.ZERO);
+                mockBalance.put(selectedCoinCode, coinBal.add(buyQty));
+                
+                JOptionPane.showMessageDialog(this, 
+                    String.format("[시장가 매수 체결]\n코인: %s\n가격: %,.0f\n수량: %.8f", 
+                    selectedCoinCode, currentSelectedPrice, buyQty));
+            } 
+            // 매도 로직 추가 가능...
+
+            updateInfoLabel(); // 잔고 갱신
+            marketAmountField.setText(""); // 입력창 초기화
+            
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, "주문 실패: " + e.getMessage());
+        }
+    }
+    
+    private void handleLimitOrder() {
+        try {
+            // 1. 입력값 검증
+            String pStr = priceField.getText().replace(",", "").trim();
+            String qStr = qtyField.getText().replace(",", "").trim();
+            
+            if (pStr.isEmpty() || qStr.isEmpty()) {
+                throw new RuntimeException("가격과 수량을 입력해주세요.");
+            }
+
+            BigDecimal price = new BigDecimal(pStr);
+            BigDecimal qty = new BigDecimal(qStr);
+            BigDecimal total = price.multiply(qty); // 총 주문 금액
+
+            // 2. 자산 확인 및 잠금(Lock) 처리
+            String currency = (sideIdx == 0) ? "KRW" : selectedCoinCode; // 매수면 KRW, 매도면 코인 필요
+            BigDecimal balance = mockBalance.getOrDefault(currency, BigDecimal.ZERO);
+            BigDecimal requiredAmount = (sideIdx == 0) ? total : qty; // 매수는 돈이, 매도는 코인이 필요
+
+            if (balance.compareTo(requiredAmount) < 0) {
+                throw new RuntimeException("주문 가능 잔고가 부족합니다.");
+            }
+
+            // 3. 잔고 차감 -> 잠금 자산으로 이동
+            mockBalance.put(currency, balance.subtract(requiredAmount));
+            BigDecimal currentLocked = mockLocked.getOrDefault(currency, BigDecimal.ZERO);
+            mockLocked.put(currency, currentLocked.add(requiredAmount));
+
+            // 4. [핵심] 주문 객체(OrderDTO) 생성
+            OrderDTO order = new OrderDTO();
+            order.setOrderId(System.currentTimeMillis()); // 고유 ID
+            order.setSide(sideIdx == 0 ? "BID" : "ASK");
+            order.setOriginalPrice(price);
+            order.setOriginalVolume(qty);
+            order.setRemainingVolume(qty);
+            order.setStatus("WAIT"); // 대기 상태
+            
+            // 5. [핵심] 리스트에 추가하고 화면 갱신!
+            openOrders.add(order);
+            refreshEditList(); // <--- 이게 있어야 화면에 뜹니다!
+
+            // 6. 마무리
+            updateInfoLabel(); // 잔고 갱신
+            JOptionPane.showMessageDialog(this, "지정가 주문이 정상 접수되었습니다.");
+
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, "주문 오류: " + e.getMessage(), "알림", JOptionPane.ERROR_MESSAGE);
+        }
     }
 
     private JPanel createMarketForm() {
-        JPanel p = new JPanel();
-        p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
-        p.setBackground(Color.WHITE);
-        p.add(new JLabel("주문금액/수량"));
-        marketAmountField = new JTextField("10000");
-        styleField(marketAmountField);
-        p.add(marketAmountField);
+        JPanel p = new JPanel(); p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS)); p.setBackground(Color.WHITE);
+        p.add(new JLabel("주문총액 (KRW)")); marketAmountField = new JTextField(); styleField(marketAmountField); p.add(marketAmountField);
+        p.add(Box.createVerticalStrut(10));
+        valExpected = new JLabel("예상 수량: -");
+        valExpected.setForeground(Color.GRAY);
+        p.add(valExpected);
+        
+        marketAmountField.getDocument().addDocumentListener(new DocumentListener() {
+            public void insertUpdate(DocumentEvent e) { updateMarketCalculation(); }
+            public void removeUpdate(DocumentEvent e) { updateMarketCalculation(); }
+            public void changedUpdate(DocumentEvent e) { updateMarketCalculation(); }
+        });
         return p;
     }
-
+    
     private void styleField(JTextField tf) {
         tf.setMaximumSize(new Dimension(Integer.MAX_VALUE, 40));
         tf.setHorizontalAlignment(JTextField.RIGHT);
-    }
-    
-    //코인 현재가 전달 받는 메서드 추가
-    public void setSelectedCoin(String code, String price) {
-    	// 1. 가격 필드 업데이트 (콤마 제거 후 숫자만 입력)
-    	String cleanPrice = price.replace(",", "").replace(" KRW", "").trim();
-        priceField.setText(cleanPrice);
-        
-        // 2. 주문 가능 잔고 라벨 업데이트를 위해 sideIdx 체크 및 갱신
-        // 현재 OrderPanel은 BTC 전용으로 되어 있으나, 
-        // 나중에 다중 코인을 지원하려면 여기서 코인 코드를 저장해야 합니다.
-        updateInfoLabel();
-        updateOrderSummary();
-        
-        // UI 피드백: 선택된 코인 알림 (필요 시)
-        System.out.println("선택된 코인: " + code + " / 현재가: " + price);
     }
 
     public static void main(String[] args) {
