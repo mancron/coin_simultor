@@ -32,6 +32,8 @@ import okhttp3.Request;
 
 
 public class HistoryPanel extends JPanel {
+	
+	String loginUser = "user_01";
     
     // UI 컴포넌트 선언
     JPanel coinHeadPanel, tabPanel;
@@ -43,7 +45,14 @@ public class HistoryPanel extends JPanel {
     
     // 각 탭별 패널 (전체, 보유, 관심)
     JPanel allCoinPanel, ownedCoinPanel, interestCoinPanel;
-  
+
+    // 현재 선택된 코인의 심볼 저장
+    private String selectedCoinSymbol = null;
+    
+    
+    private CoinRowPanel selectedRowPanel = null; // 현재 선택된 패널 객체 저장
+    private final Color SELECTED_COLOR = new Color(240, 240, 240); // 선택 시 어두워질 색상
+    private final Color DEFAULT_COLOR = Color.WHITE; // 기본 배경색
 
     // 데이터 관리: 코인 심볼 하나에 여러 개의 RowPanel(전체탭용, 관심탭용 등)이 매핑될 수 있음
     private HashMap<String, List<CoinRowPanel>> coinMap = new HashMap<>();
@@ -91,7 +100,7 @@ public class HistoryPanel extends JPanel {
         interestCoinPanel = createListPanel();
         
         // 3-2. CardLayout에 패널 추가 (식별자 부여)
-        mainListPanel.add(allCoinPanel, "ALL");
+        mainListPanel.add(allCoinPanel, "ALL");	
         mainListPanel.add(ownedCoinPanel, "OWNED");
         mainListPanel.add(interestCoinPanel, "INTEREST");
         
@@ -114,12 +123,38 @@ public class HistoryPanel extends JPanel {
         add(coinHeadPanel, BorderLayout.NORTH);        // 헤더
         add(scrollPanel, BorderLayout.CENTER);         // 중앙 리스트
         
-        // 테스트 데이터 추가
-
+        
+        //코인 데이터 추가
+        initDataAndWebSocket();
         
     }
     
     
+    public String getSelectedCoin() {
+        return selectedCoinSymbol;
+    }
+    
+    private void selectCoin(String symbol, CoinRowPanel clickedPanel) {
+        this.selectedCoinSymbol = symbol;
+        System.out.println("선택된 코인: " + symbol); // 디버깅용
+        
+        if (selectedRowPanel != null) {
+            selectedRowPanel.setBackground(DEFAULT_COLOR);
+        }
+
+        // 2. 현재 클릭된 패널의 배경색 변경 및 저장
+        this.selectedCoinSymbol = symbol;
+        this.selectedRowPanel = clickedPanel;
+        
+        if (selectedRowPanel != null) {
+            selectedRowPanel.setBackground(SELECTED_COLOR);
+            selectedRowPanel.setOpaque(true); // 배경색이 보이도록 설정
+        }
+
+        // UI 갱신
+        revalidate();
+        repaint();
+    }
     
     
     private void updateTabStyle(TabButton selectedBtn) {
@@ -148,15 +183,23 @@ public class HistoryPanel extends JPanel {
             updateTabStyle(btn);
         });
     }
-
+    
+    //DAO 를 이용해서 데이터를 DTO 에 넣고 그걸 패널에서 보여줘야함
+    private void addAssets(String coin) {
+    	
+    	
+    	AssetRowPanel arow = new AssetRowPanel(null);
+    	allCoinPanel.add(arow);
+    	
+    }
 
     
     // 특정 패널에 코인을 추가하는 메소드로 변경
     /**
      * 외부에서 코인을 추가할 때 호출하는 메소드
-     * @param type 0: 전체, 1: 보유, 2: 관심 (어디 패널에 넣을지 결정)
+     * @param type 0: 전체, 1: 관심 (어디 패널에 넣을지 결정)
      */
-    public void addNewCoin(int type, String code, String price, String fluc) {
+    public void addNewCoin(int type, String code, String price, String fluc,String Acc_trade_price) {
         // 1. CoinConfig에서 한글 이름 가져오기
         String krName = CoinConfig.COIN_INFO.getOrDefault(code, code);
 
@@ -165,13 +208,21 @@ public class HistoryPanel extends JPanel {
         String displayName = "<html><center>" + krName + "<br><font size='3' color='gray'>" + code + "</font></center></html>";
         
         // 3. 패널 생성 시에는 'displayName'(화면용)을 전달
-        CoinRowPanel row = new CoinRowPanel(displayName, price, fluc);
+        CoinRowPanel row = new CoinRowPanel(displayName, price, fluc,Acc_trade_price);
+        row.setBackground(DEFAULT_COLOR);
+        
+        // --- 클릭 이벤트 리스너 추가 ---
+        row.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override
+            public void mouseClicked(java.awt.event.MouseEvent e) {
+            	selectCoin(code,row); // 클릭 시 해당 코인의 code(심볼)를 저장
+            }
+        });
         
         // 4. UI 탭에 추가
         switch (type) {
             case 0: allCoinPanel.add(row); break;
-            case 1: ownedCoinPanel.add(row); break;
-            case 2: interestCoinPanel.add(row); break;
+            case 1: interestCoinPanel.add(row); break;
         }
         
         // 5. [중요] 데이터 맵의 키는 반드시 'code'(BTC)를 사용해야 웹소켓과 연결됨
@@ -181,51 +232,47 @@ public class HistoryPanel extends JPanel {
         repaint();
     }
     
+
+    private void initDataAndWebSocket() {
+        UpbitWebSocketDao webSocketDao = new UpbitWebSocketDao(this);
+        
+        // 전체 코인 목록 생성
+        for (String code : CoinConfig.getCodes()) {
+        	addNewCoin(0, code, "Loading...", "0.00", "0");
+        }
+
+        // 웹소켓 연결
+        OkHttpClient client = new OkHttpClient();
+        Request request = new Request.Builder()
+                .url("wss://api.upbit.com/websocket/v1")
+                .build();
+        client.newWebSocket(request, webSocketDao);
+    }
+    
    
-    public void updateCoinPrice(String symbol, String newPrice, String newFluc) {
+    public void updateCoinPrice(String symbol, String newPrice, String newFluc ,String Acc_trade_price) {
         if (coinMap.containsKey(symbol)) {
             List<CoinRowPanel> rows = coinMap.get(symbol);
             for (CoinRowPanel row : rows) {
-                row.updateData(newPrice, newFluc); 
+                row.updateData(newPrice, newFluc,Acc_trade_price); 
             }
         }
     }
     
     public static void main(String[] args) {
-        JFrame frame = new JFrame("코인 시뮬레이터");
+        JFrame frame = new JFrame("코인 리스트 판넬");
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         
         // 패널 생성
         HistoryPanel historyPanel = new HistoryPanel();
         frame.add(historyPanel);
         
-        // DAO 생성 (패널 연결)
-        UpbitWebSocketDao webSocketDao = new UpbitWebSocketDao(historyPanel);
-        
         //메인 프레임 있으면 없어됨
         frame.pack();
         frame.setMinimumSize(historyPanel.getMinimumSize()); 
         frame.setSize(400, 600);
-        frame.setVisible(true); // 창을 먼저 띄우고 데이터 연결하는 것이 보기 좋습니다.
-        //메인 프레임 있으면 없어됨 
+        frame.setVisible(true);
         
-        // --- 1. 초기 데이터 세팅 ---
-        // (웹소켓에서 코드가 "BTC"로 변환되어 오므로, 여기서도 "BTC"로 등록해야 매칭됨)
-        for (String code : CoinConfig.getCodes()) {
-            // addNewCoin(탭번호, 코드, 가격, 등락률)
-            historyPanel.addNewCoin(0, code, "연결 중...", "0.00");
-        }
-        
-        
-        // --- 2. 웹소켓 연결 ---
-        OkHttpClient client = new OkHttpClient();
-        Request request = new Request.Builder()
-                .url("wss://api.upbit.com/websocket/v1")
-                .build();
-                
-        // 연결 시작 (백그라운드에서 계속 돔)
-        client.newWebSocket(request, webSocketDao);
-        
-        // shutdown() 코드는 삭제했습니다.
+
     }
 }

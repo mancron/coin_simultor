@@ -42,6 +42,7 @@ public class UpbitWebSocketDao extends WebSocketListener {
         try {
             String json = bytes.utf8();
             TickerDto data = objectMapper.readValue(json, TickerDto.class);
+            
             // [핵심] Swing UI 업데이트는 반드시 별도의 이벤트 스레드에서 실행
             SwingUtilities.invokeLater(() -> {
                 // 1. 심볼 변환 (KRW-BTC -> BTC)
@@ -51,7 +52,17 @@ public class UpbitWebSocketDao extends WebSocketListener {
                 // 2. 가격 포맷 (천단위 콤마)
                 double price = data.getTrade_price();
                 String priceStr;
+                
+                double accPrice = data.getAcc_trade_price();
+                String accPriceStr;
 
+                if (accPrice >= 100_000_000) {
+                    // 1억 원 이상일 경우 '억' 단위 표시 (선택 사항)
+                    accPriceStr = String.format("%,.0f백만", accPrice / 1_000_000);
+                } else {
+                    accPriceStr = String.format("%,.0f", accPrice);
+                }
+                
                 if (price < 1) {
                     // 1원 미만 (예: 0.0005) -> 소수점 4자리 표시
                     priceStr = String.format("%,.5f", price);
@@ -65,9 +76,11 @@ public class UpbitWebSocketDao extends WebSocketListener {
                 
                 // 3. 등락률 계산 및 포맷 (signed_change_rate는 소수점이므로 * 100)
                 String flucStr = String.format("%.2f", data.getSigned_change_rate() * 100);
+
                 
                 // 4. HistoryPanel의 메소드 호출
-                historyPanel.updateCoinPrice(symbol, priceStr, flucStr);
+                historyPanel.updateCoinPrice(symbol, priceStr, flucStr,accPriceStr);
+                
             });
             
         } catch (Exception e) {
