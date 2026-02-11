@@ -76,13 +76,6 @@ public class Assets_TablePanel extends JPanel {
         title.setForeground(C_VALUE);
         bar.add(title, BorderLayout.WEST);
 
-        // 오른쪽: 소액자산 숨기기 체크박스
-        JCheckBox cbHide = new JCheckBox("거래미지원/소액 자산 숨기기 (평가금액 1만원 미만)");
-        cbHide.setFont(new Font("맑은 고딕", Font.PLAIN, 10));
-        cbHide.setForeground(C_LABEL);
-        cbHide.setBackground(Color.WHITE);
-        cbHide.setFocusPainted(false);
-        bar.add(cbHide, BorderLayout.EAST);
 
         return bar;
     }
@@ -132,7 +125,7 @@ public class Assets_TablePanel extends JPanel {
         table.getColumnModel().getColumn(1).setCellRenderer(centerCell());
 
         // 2: 매수평균가 (우측 + 수정 링크)
-        table.getColumnModel().getColumn(2).setCellRenderer(new AvgPriceRenderer());
+//        table.getColumnModel().getColumn(2).setCellRenderer(new AvgPriceRenderer());
 
         // 3: 매수금액 (우측)
         table.getColumnModel().getColumn(3).setCellRenderer(rightCell());
@@ -143,8 +136,7 @@ public class Assets_TablePanel extends JPanel {
         // 5: 평가손익(%) (우측 + 색상)
         table.getColumnModel().getColumn(5).setCellRenderer(new PnlRenderer());
 
-        // 6: 주문 버튼 (중앙)
-        table.getColumnModel().getColumn(6).setCellRenderer(new OrderButtonRenderer());
+
     }
 
     private void setColumnWidths() {
@@ -178,7 +170,7 @@ public class Assets_TablePanel extends JPanel {
                     ? String.format("%,d KRW", dto.getAvgPrice().multiply(dto.getBalance()).longValue()) : "0 KRW", // 3
                 dto.getTotalValue() != null ? String.format("%,d KRW", dto.getTotalValue().longValue()) : "0 KRW",  // 4
                 pnlRate + "||" + pnlStr + "||" + pnlKrwStr,  // 5: 손익 복합 문자열
-                "주문"                                         // 6: 버튼
+                                                         
             });
         }
         tableModel.fireTableDataChanged();
@@ -246,33 +238,33 @@ public class Assets_TablePanel extends JPanel {
     }
 
     /** 매수평균가 + "수정" 링크 */
-    static class AvgPriceRenderer extends DefaultTableCellRenderer {
-        @Override public Component getTableCellRendererComponent(
-                JTable t, Object v, boolean sel, boolean focus, int row, int col) {
-            JPanel cell = new JPanel();
-            cell.setLayout(new BoxLayout(cell, BoxLayout.Y_AXIS));
-            cell.setBackground(row % 2 == 0 ? C_ROW_ODD : C_ROW_EVEN);
-            cell.setBorder(new EmptyBorder(0, 0, 0, 10));
-
-            JLabel price = new JLabel(v != null ? v.toString() : "0 KRW");
-            price.setFont(new Font("맑은 고딕", Font.PLAIN, 12));
-            price.setForeground(C_VALUE);
-            price.setAlignmentX(Component.RIGHT_ALIGNMENT);
-
-            JLabel edit = new JLabel("수정");
-            edit.setFont(new Font("맑은 고딕", Font.PLAIN, 10));
-            edit.setForeground(new Color(100, 140, 210));
-            edit.setAlignmentX(Component.RIGHT_ALIGNMENT);
-
-            cell.add(Box.createVerticalGlue());
-            cell.add(price);
-            cell.add(edit);
-            cell.add(Box.createVerticalGlue());
-
-            if (sel) cell.setBackground(new Color(240, 245, 255));
-            return cell;
-        }
-    }
+//    static class AvgPriceRenderer extends DefaultTableCellRenderer {
+//        @Override public Component getTableCellRendererComponent(
+//                JTable t, Object v, boolean sel, boolean focus, int row, int col) {
+//            JPanel cell = new JPanel();
+//            cell.setLayout(new BoxLayout(cell, BoxLayout.Y_AXIS));
+//            cell.setBackground(row % 2 == 0 ? C_ROW_ODD : C_ROW_EVEN);
+//            cell.setBorder(new EmptyBorder(0, 0, 0, 10));
+//
+//            JLabel price = new JLabel(v != null ? v.toString() : "0 KRW");
+//            price.setFont(new Font("맑은 고딕", Font.PLAIN, 12));
+//            price.setForeground(C_VALUE);
+//            price.setAlignmentX(Component.RIGHT_ALIGNMENT);
+//
+//            JLabel edit = new JLabel("수정");
+//            edit.setFont(new Font("맑은 고딕", Font.PLAIN, 10));
+//            edit.setForeground(new Color(100, 140, 210));
+//            edit.setAlignmentX(Component.RIGHT_ALIGNMENT);
+//
+//            cell.add(Box.createVerticalGlue());
+//            cell.add(price);
+//            cell.add(edit);
+//            cell.add(Box.createVerticalGlue());
+//
+//            if (sel) cell.setBackground(new Color(240, 245, 255));
+//            return cell;
+//        }
+//    }
 
     /** 평가손익(%) 셀: % 수익률 + 손익금 2줄 */
     static class PnlRenderer extends DefaultTableCellRenderer {
@@ -311,25 +303,7 @@ public class Assets_TablePanel extends JPanel {
     }
 
     /** 주문 버튼 렌더러 */
-    static class OrderButtonRenderer extends DefaultTableCellRenderer {
-        @Override public Component getTableCellRendererComponent(
-                JTable t, Object v, boolean sel, boolean focus, int row, int col) {
-            JPanel cell = new JPanel(new GridBagLayout());
-            cell.setBackground(row % 2 == 0 ? C_ROW_ODD : C_ROW_EVEN);
 
-            JButton btn = new JButton("주문  ▼");
-            btn.setFont(new Font("맑은 고딕", Font.PLAIN, 11));
-            btn.setForeground(C_VALUE);
-            btn.setBackground(Color.WHITE);
-            btn.setBorder(BorderFactory.createLineBorder(new Color(190, 190, 190)));
-            btn.setFocusPainted(false);
-            btn.setPreferredSize(new Dimension(60, 28));
-            cell.add(btn);
-
-            if (sel) cell.setBackground(new Color(240, 245, 255));
-            return cell;
-        }
-    }
 
     private DefaultTableCellRenderer centerCell() {
         return new DefaultTableCellRenderer() {
