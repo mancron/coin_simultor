@@ -6,6 +6,8 @@ import java.math.RoundingMode;
 
 import javax.swing.JLabel;
 
+import DTO.AssetDTO;
+
 // CoinRowPanel을 상속받아 웹소켓 업데이트 로직을 재활용
 public class AssetRowPanel extends CoinRowPanel {
 

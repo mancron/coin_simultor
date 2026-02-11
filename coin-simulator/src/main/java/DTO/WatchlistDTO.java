@@ -1,4 +1,4 @@
-package com.team.coin_simulator.Market_Panel;
+package DTO;
 
 import java.sql.Timestamp;
 

@@ -25,10 +25,15 @@ import javax.swing.event.DocumentListener; // 검색 리스너
 
 import com.team.coin_simulator.CoinConfig;
 
+import DAO.AssetDAO;
+import DAO.UpbitWebSocketDao;
+import DAO.WatchListDAO;
+import DTO.AssetDTO;
+import DTO.WatchlistDTO;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 
-public class HistoryPanel extends JPanel {
+public class HistoryPanel extends JPanel implements UpbitWebSocketDao.TickerListener {
 	
 	String loginUser = "user_01";
     
@@ -154,6 +159,11 @@ public class HistoryPanel extends JPanel {
         watchList();
     }
     
+    @Override
+    public void onTickerUpdate(String symbol, String priceStr, String flucStr, String accPriceStr) {
+        // 기존의 updateCoinPrice 로직을 여기서 수행
+        updateCoinPrice(symbol, priceStr, flucStr, accPriceStr);
+    }
     // [추가] 검색 필터링 로직
     private void filterCoinList() {
     	String text = searchField.getText().trim();
@@ -314,19 +324,16 @@ public class HistoryPanel extends JPanel {
     
 
     private void initDataAndWebSocket() {
-        UpbitWebSocketDao webSocketDao = new UpbitWebSocketDao(this);
-        
+        // 1. 코인 목록 UI 초기화 (기존 유지)
         for (String code : CoinConfig.getCodes()) {
-        	addNewCoin(0, code, "Loading...", "0.00", "0");
+            addNewCoin(0, code, "Loading...", "0.00", "0");
         }
-
-        OkHttpClient client = new OkHttpClient();
-        Request request = new Request.Builder()
-                .url("wss://api.upbit.com/websocket/v1")
-                .build();
-        client.newWebSocket(request, webSocketDao);
+        //    싱글톤 DAO에 '나에게도 시세 데이터 줘(addListener)'라고 등록만 합니다.
+        UpbitWebSocketDao.getInstance().addListener(this);
+        // 3. 보유 자산 로드 (기존 유지)
         loadOwnedAssets();
     }
+    
     
     private void watchList() {
         WatchListDAO dao = new WatchListDAO();
@@ -360,7 +367,7 @@ public class HistoryPanel extends JPanel {
         frame.setMinimumSize(historyPanel.getMinimumSize()); 
         frame.setSize(400, 600);
         frame.setVisible(true);
-        
+        UpbitWebSocketDao.getInstance().start();
 
     }
 }
