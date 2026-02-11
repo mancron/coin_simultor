@@ -1,4 +1,4 @@
-package com.team.coin_simulator.Market_Panel;
+package DAO;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -7,6 +7,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 import com.team.coin_simulator.DBConnection;
+
+import DTO.AssetDTO;
 
 public class AssetDAO {
 

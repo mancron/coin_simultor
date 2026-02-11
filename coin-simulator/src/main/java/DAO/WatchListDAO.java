@@ -1,4 +1,4 @@
-package com.team.coin_simulator.Market_Panel;
+package DAO;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -6,6 +6,8 @@ import java.sql.ResultSet;
 import java.util.ArrayList;
 import java.util.List;
 import com.team.coin_simulator.DBConnection; // DB 연결 클래스가 있다고 가정
+
+import DTO.WatchlistDTO;
 
 public class WatchListDAO {
 

@@ -1,4 +1,4 @@
-package com.team.coin_simulator.Market_Panel;
+package DTO;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 @JsonIgnoreProperties(ignoreUnknown = true)

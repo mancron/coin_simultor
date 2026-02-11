@@ -7,6 +7,7 @@ import javax.swing.SwingUtilities;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.team.coin_simulator.CoinConfig;
 
+import DTO.TickerDto;
 import okhttp3.Response;
 import okhttp3.WebSocket;
 import okhttp3.WebSocketListener;
