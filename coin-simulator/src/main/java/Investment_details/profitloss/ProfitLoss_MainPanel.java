@@ -20,6 +20,7 @@ import java.util.List;
  * │  ProfitLoss_DetailTablePanel  (SOUTH)   │  ← 일별 상세 테이블
  * └─────────────────────────────────────────┘
  */
+
 public class ProfitLoss_MainPanel extends JPanel {
 
     // ── 하위 패널 ──────────────────────────────────────────────────
