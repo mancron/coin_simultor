@@ -49,9 +49,6 @@ public class Asset_PortfolioChartPanel extends JPanel {
             chart.getLegend().setItemFont(legendFont);
         }
 
-        // 3. 플롯(차트 내부 라벨) 폰트 설정
-
-        
         // 3. 차트 디자인 커스텀
         RingPlot plot = (RingPlot) chart.getPlot();
         plot.setLabelFont(labelFont);
