@@ -42,7 +42,7 @@ public class HistoryPanel extends JPanel {
     // 리스트 전환을 위한 컴포넌트
     JPanel mainListPanel; // 카드를 담을 패널
     CardLayout cardLayout; // 레이아웃 매니저
-    
+    private AssetDAO assetDAO = new AssetDAO();
     // 각 탭별 패널 (전체, 보유, 관심)
     JPanel allCoinPanel, ownedCoinPanel, interestCoinPanel;
 
@@ -83,12 +83,13 @@ public class HistoryPanel extends JPanel {
         tabPanel.add(btnInterest);
         
         // 2. 헤더 패널 구성 (고정 영역)
-        coinHeadPanel = new JPanel(new GridLayout(1, 3));
+        coinHeadPanel = new JPanel(new GridLayout(1, 4));
         coinHeadPanel.setBackground(Color.white);
         coinHeadPanel.setBorder(new MatteBorder(0, 0, 1, 0, Color.LIGHT_GRAY));
         coinHeadPanel.add(new JLabel("코인명", SwingConstants.CENTER));
         coinHeadPanel.add(new JLabel("현재가", SwingConstants.CENTER));
         coinHeadPanel.add(new JLabel("전일대비", SwingConstants.CENTER));
+        coinHeadPanel.add(new JLabel("거래대금", SwingConstants.CENTER)); 
         
         // 3. 리스트 컨테이너 구성 (CardLayout 적용)
         cardLayout = new CardLayout();
@@ -108,19 +109,17 @@ public class HistoryPanel extends JPanel {
         scrollPanel = new JScrollPane(mainListPanel);
         scrollPanel.setBorder(null);
         
-        // 5. 버튼 이벤트 리스너 연결 (화면 전환 로직)
-        btnAll.addActionListener(e -> cardLayout.show(mainListPanel, "ALL"));
-        btnOwned.addActionListener(e -> cardLayout.show(mainListPanel, "OWNED"));
-        btnInterest.addActionListener(e -> cardLayout.show(mainListPanel, "INTEREST"));
-        
         
         setupTabActions(btnAll, "ALL");
         setupTabActions(btnOwned, "OWNED");
         setupTabActions(btnInterest, "INTEREST");
         
         // 6. 메인 패널에 부착
-        add(tabPanel, BorderLayout.BEFORE_FIRST_LINE); // 상단 탭
-        add(coinHeadPanel, BorderLayout.NORTH);        // 헤더
+        JPanel topContainer = new JPanel(new BorderLayout());
+        topContainer.add(tabPanel, BorderLayout.NORTH);      // 탭을 맨 위로
+        topContainer.add(coinHeadPanel, BorderLayout.CENTER); // 헤더를 그 아래로
+        
+        add(topContainer, BorderLayout.NORTH); // 묶은 패널을 북쪽에 배치
         add(scrollPanel, BorderLayout.CENTER);         // 중앙 리스트
         
         
@@ -168,6 +167,43 @@ public class HistoryPanel extends JPanel {
         }
     }
     
+    private void updateHeadPanel(String type) {
+        // 1. 기존 컴포넌트(라벨) 모두 제거
+        coinHeadPanel.removeAll(); 
+
+        // 2. 탭 타입에 따른 컬럼 배열 설정
+        String[] headers;
+        if (type.equals("OWNED")) {
+            // [보유 코인] 탭일 때 보여줄 컬럼
+            headers = new String[]{"코인명", "평단가", "수익률", "보유갯수"};
+        } else {
+            // [전체/관심 코인] 탭일 때 보여줄 컬럼
+            headers = new String[]{"코인명", "현재가", "전일대비", "거래대금"};
+        }
+
+        // 3. 라벨 생성 및 추가
+        for (String title : headers) {
+            coinHeadPanel.add(new JLabel(title, SwingConstants.CENTER));
+        }
+
+        // 4. UI 갱신 (필수)
+        coinHeadPanel.revalidate();
+        coinHeadPanel.repaint();
+    }
+    
+    private void setupTabActions(TabButton btn, String cardName) {
+        btn.addActionListener(e -> {
+            // 1. 메인 리스트 화면 전환
+            cardLayout.show(mainListPanel, cardName);
+            
+            // 2. 탭 버튼 스타일 업데이트
+            updateTabStyle(btn);
+            
+            // 3. [추가됨] 상단 헤더 패널 내용 변경
+            updateHeadPanel(cardName); 
+        });
+    }
+    
     // 리스트 패널 생성 헬퍼 메소드 (코드 중복 제거)
     private JPanel createListPanel() {
         JPanel panel = new JPanel();
@@ -177,20 +213,41 @@ public class HistoryPanel extends JPanel {
     }
   
     
-    private void setupTabActions(TabButton btn, String cardName) {
-        btn.addActionListener(e -> {
-            cardLayout.show(mainListPanel, cardName);
-            updateTabStyle(btn);
-        });
-    }
     
     //DAO 를 이용해서 데이터를 DTO 에 넣고 그걸 패널에서 보여줘야함
-    private void addAssets(String coin) {
-    	
-    	
-    	AssetRowPanel arow = new AssetRowPanel(null);
-    	allCoinPanel.add(arow);
-    	
+    public void loadOwnedAssets() {
+        // 1. 기존 패널 초기화
+        ownedCoinPanel.removeAll();
+        
+        // 2. DB에서 내 자산 조회
+        List<AssetDTO> assets = assetDAO.getUserAssets(loginUser); // loginUser 변수 활용
+
+        // 3. 자산이 없을 경우 처리
+        if (assets.isEmpty()) {
+            ownedCoinPanel.add(new JLabel("보유 중인 코인이 없습니다.", SwingConstants.CENTER));
+        } else {
+            // 4. 자산별 패널 생성 및 등록
+            for (AssetDTO asset : assets) {
+                String symbol = asset.getCurrency(); // "BTC"
+                String krName = CoinConfig.COIN_INFO.getOrDefault(symbol, symbol);
+                
+                // 화면 표시용 이름
+                String displayName = "<html><center>" + krName + "<br><font size='3' color='gray'>" + symbol + "</font></center></html>";
+
+                // AssetRowPanel 생성
+                AssetRowPanel row = new AssetRowPanel(displayName, asset);
+                
+                // [핵심] 1. UI에 추가
+                ownedCoinPanel.add(row);
+                
+                // [핵심] 2. coinMap에 추가해야 웹소켓으로 실시간 가격 반영됨
+                // 키값은 반드시 심볼("BTC")이어야 함
+                coinMap.computeIfAbsent(symbol, k -> new ArrayList<>()).add(row);
+            }
+        }
+        
+        ownedCoinPanel.revalidate();
+        ownedCoinPanel.repaint();
     }
 
     
@@ -247,6 +304,7 @@ public class HistoryPanel extends JPanel {
                 .url("wss://api.upbit.com/websocket/v1")
                 .build();
         client.newWebSocket(request, webSocketDao);
+        loadOwnedAssets();
     }
     
    
