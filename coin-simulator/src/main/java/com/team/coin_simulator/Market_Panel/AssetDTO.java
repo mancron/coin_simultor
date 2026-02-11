@@ -1,4 +1,4 @@
-package DTO;
+package com.team.coin_simulator.Market_Panel;
 
 import java.math.BigDecimal;
 
