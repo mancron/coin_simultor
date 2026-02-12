@@ -35,7 +35,8 @@ public class MarketCandleDTO implements Serializable {
 
     // 3. OHLC (Open, High, Low, Close) - 가격 데이터
     private BigDecimal openingPrice;    // 시가
-    private BigDecimal highPrice;       // 고가
+    private BigDecimal
+    highPrice;       // 고가
     private BigDecimal lowPrice;        // 저가
     private BigDecimal tradePrice;      // 종가 (현재가)
 
