@@ -23,8 +23,7 @@ public class UpbitWebSocketDao extends WebSocketListener {
 
     private String getSubscriptionMessage() {
         // CoinConfig.getCodes()를 스트림으로 변환
-        String codes = CoinConfig.getCodes().stream()
-                .map(coin -> "\"KRW-" + coin + "\"")
+        String codes = CoinConfig.getCodes().stream().map(coin -> "\"KRW-" + coin + "\"")
                 .collect(Collectors.joining(","));
         
         return String.format("[{\"ticket\":\"test\"},{\"type\":\"ticker\",\"codes\":[%s]}]", codes);
