@@ -166,7 +166,7 @@ public class HistoryPanel extends JPanel {
         // 1. CoinConfig에서 한글 이름 가져오기
         String krName = CoinConfig.COIN_INFO.getOrDefault(code, code);
 
-        // 2. [핵심] HTML 태그를 사용하여 두 줄로 만들기
+        // 2. HTML 태그를 사용하여 두 줄로 만들기
         // <br>: 줄바꿈, <font>: 폰트 스타일 (코드는 조금 작고 회색으로)
         String displayName = "<html><center>" + krName + "<br><font size='3' color='gray'>" + code + "</font></center></html>";
         
@@ -188,7 +188,7 @@ public class HistoryPanel extends JPanel {
         // 1. 패널 자체에 리스너 부착
         row.addMouseListener(commonListener);
         
-        // 2. [중요] 패널 내부의 모든 컴포넌트(라벨들)에도 리스너 부착
+        // 2. 패널 내부의 모든 컴포넌트(라벨들)에도 리스너 부착
         for (java.awt.Component c : row.getComponents()) {
             c.addMouseListener(commonListener);
         }
@@ -217,9 +217,8 @@ public class HistoryPanel extends JPanel {
             }
         }
         
-        // 2. [추가] 주문 패널(OrderPanel)에도 실시간 가격 전달
+        // 2. 주문 패널(OrderPanel)에도 실시간 가격 전달
         if (orderPanel != null) {
-            // "지금 들어온 이 코인(symbol) 가격이 이거(newPrice)래. 너가 선택한 코인이면 업데이트 해!"
             orderPanel.updateRealTimePrice(symbol, newPrice);
         }
     }
@@ -229,20 +228,15 @@ public class HistoryPanel extends JPanel {
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         frame.setLayout(new GridLayout(1, 2)); // 화면을 반반 나눔
 
-        // ------------------------------------------------------
-        // [핵심] 여기서 딱 한 번만 생성해서 서로 연결합니다!
-        // ------------------------------------------------------
-        
-        // 1. 주문 패널(OrderPanel)을 먼저 만듭니다. (이게 유일한 주문창!)
+        // 1. 주문 패널
         OrderPanel orderPanel = new OrderPanel();
         
-        // 2. 히스토리 패널을 만들 때, 위에서 만든 주문 패널을 넘겨줍니다.
-        //    (이제 히스토리 패널은 이 주문 패널에게 명령을 내릴 수 있습니다)
+        // 2. 위에서 만든 주문 패널을 넘김
         HistoryPanel historyPanel = new HistoryPanel(orderPanel);
         
-        // 3. 화면에 붙일 때도 방금 만든 그 변수들을 그대로 씁니다.
+        // 3. 화면에 붙일 때도 방금 만든 그 변수들을 그대로 사용
         frame.add(historyPanel); // 왼쪽
-        frame.add(orderPanel);   // 오른쪽 (절대 new OrderPanel() 하지 마세요!)
+        frame.add(orderPanel);   // 오른쪽
         
         // ------------------------------------------------------
 

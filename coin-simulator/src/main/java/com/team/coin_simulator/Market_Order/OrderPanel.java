@@ -11,6 +11,7 @@ import java.util.*;
 import java.util.List;
 
 public class OrderPanel extends JPanel {
+	private OrderDAO orderDAO = new OrderDAO();
     private Map<String, BigDecimal> mockBalance = new HashMap<>();
     private Map<String, BigDecimal> mockLocked = new HashMap<>();
     private List<OrderDTO> openOrders = new ArrayList<>();
@@ -21,6 +22,7 @@ public class OrderPanel extends JPanel {
     private JLabel valAvailable, valTotal;
     private JButton btnAction;
     private JLabel lblSelectedCoinInfo; 
+    private JLabel lblMarketUnit;     
 
     private JLabel valExpected; // 예상 체결 수량/금액 표시 라벨
     private String selectedCoinCode = "BTC"; // 기본값
@@ -357,20 +359,23 @@ public class OrderPanel extends JPanel {
         item.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(new Color(230, 230, 230)),
                 BorderFactory.createEmptyBorder(10, 15, 10, 15)));
-        item.setMaximumSize(new Dimension(360,120));
+        item.setMaximumSize(new Dimension(360, 140)); // 높이 살짝 늘림
 
+        // 1. 매수/매도 라벨
         String sideTxt = order.getSide().equals("BID") ? "매수" : "매도";
         JLabel typeLbl = new JLabel(sideTxt);
         typeLbl.setForeground(order.getSide().equals("BID") ? COLOR_BID : COLOR_ASK);
         typeLbl.setFont(new Font("맑은 고딕", Font.BOLD, 14));
 
+        // 2. 정보 표시 (가격, 수량)
         JPanel center = new JPanel(new GridLayout(2, 2));
         center.setBackground(Color.WHITE);
         center.add(new JLabel("가격"));
-        center.add(new JLabel(String.format("%,.2f KRW", order.getOriginalPrice()), SwingConstants.RIGHT));
+        center.add(new JLabel(String.format("%,.0f KRW", order.getOriginalPrice()), SwingConstants.RIGHT));
         center.add(new JLabel("수량"));
         center.add(new JLabel(order.getOriginalVolume() + " BTC", SwingConstants.RIGHT));
-        
+
+        // 3. 버튼 패널 (정정 / 취소) -> 여기가 핵심 변경 사항!
         JPanel btnPanel = new JPanel(new GridLayout(1, 2, 5, 0)); // 1행 2열
         btnPanel.setBackground(Color.WHITE);
 
@@ -384,18 +389,18 @@ public class OrderPanel extends JPanel {
         btnCancel.setBackground(new Color(255, 230, 230));
         btnCancel.setForeground(Color.RED);
         btnCancel.addActionListener(e -> cancelOrder(order)); // 취소 로직 분리
-        
+
         btnPanel.add(btnModify);
         btnPanel.add(btnCancel);
 
         item.add(typeLbl, BorderLayout.NORTH);
         item.add(center, BorderLayout.CENTER);
-        item.add(btnCancel, BorderLayout.SOUTH);
+        item.add(btnPanel, BorderLayout.SOUTH);
         return item;
     }
 
     private void cancelOrder(OrderDTO order) {
-        String curr = order.getSide().equals("BID") ? "KRW" : "BTC"; // 매수면 KRW, 매도면 BTC
+        String curr = order.getSide().equals("BID") ? "KRW" : "BTC"; // 매수면 KRW, 매도면 BTC 필요
         
         // 잠겨있던 자산 계산
         BigDecimal lockedAmt;
@@ -407,15 +412,23 @@ public class OrderPanel extends JPanel {
             lockedAmt = order.getOriginalVolume();
         }
 
-        // 자산 복구 (Locked 차감, Balance 증가)
-        mockLocked.put(curr, mockLocked.get(curr).subtract(lockedAmt));
-        mockBalance.put(curr, mockBalance.get(curr).add(lockedAmt));
+     // "test_user"는 현재 사용 중인 임시 아이디
+        boolean isDBSuccess = orderDAO.cancelOrder(order.getOrderId(), "test_user", order.getSide(), lockedAmt);
 
-        // 리스트에서 삭제 및 갱신
-        openOrders.remove(order);
-        refreshEditList();
-        updateInfoLabel();
-        JOptionPane.showMessageDialog(this, "주문이 취소되었습니다.");
+        if (isDBSuccess) {
+            //DB 성공 시에만 메모리(Mock) 자산 복구
+            mockLocked.put(curr, mockLocked.get(curr).subtract(lockedAmt));
+            mockBalance.put(curr, mockBalance.get(curr).add(lockedAmt));
+
+            // 4. 리스트에서 삭제 및 갱신
+            openOrders.remove(order);
+            refreshEditList();
+            updateInfoLabel();
+            
+            JOptionPane.showMessageDialog(this, "주문이 취소되었습니다. (DB 반영 완료)");
+        } else {
+            JOptionPane.showMessageDialog(this, "DB 취소 처리에 실패했습니다.", "오류", JOptionPane.ERROR_MESSAGE);
+        }
     }
     
     private void showModifyDialog(OrderDTO order) {
@@ -459,19 +472,32 @@ public class OrderPanel extends JPanel {
                 }
 
                 // (4) 실제 반영 (기존 것 취소 확정 + 새 것 잠금)
-                mockBalance.put(curr, tempBalance.subtract(newRequiredAmt));
-                mockLocked.put(curr, tempLocked.add(newRequiredAmt));
+                boolean isDBSuccess = orderDAO.modifyOrder(
+                		order.getOrderId(), 
+                	    "test_user", 
+                	    order.getSide(), 
+                	    oldLockedAmt, 
+                	    newRequiredAmt, 
+                	    newPrice, 
+                	    newQty
+                	);
 
-                // (5) 주문 정보 업데이트
-                order.setOriginalPrice(newPrice);
-                order.setOriginalVolume(newQty);
-                order.setRemainingVolume(newQty); // 미체결 상태라면 잔여량도 초기화
+                	if (isDBSuccess) {
+                	    // (4) 실제 반영 (DB 성공 시에만 메모리 업데이트)
+                	    mockBalance.put(curr, tempBalance.subtract(newRequiredAmt));
+                	    mockLocked.put(curr, tempLocked.add(newRequiredAmt));
 
-                // UI 갱신
-                refreshEditList();
-                updateInfoLabel();
-                JOptionPane.showMessageDialog(this, "주문이 정정되었습니다.");
+                	    // (5) 주문 객체 정보 업데이트
+                	    order.setOriginalPrice(newPrice);
+                	    order.setOriginalVolume(newQty);
+                	    order.setRemainingVolume(newQty);
 
+                	    refreshEditList();
+                	    updateInfoLabel();
+                	    JOptionPane.showMessageDialog(this, "주문이 정정되었습니다. (DB 반영 완료)");
+                	} else {
+                	    JOptionPane.showMessageDialog(this, "DB 정정 처리에 실패했습니다.", "오류", JOptionPane.ERROR_MESSAGE);
+                	}
             } catch (Exception ex) {
                 JOptionPane.showMessageDialog(this, "정정 실패: " + ex.getMessage(), "오류", JOptionPane.ERROR_MESSAGE);
             }
@@ -486,6 +512,18 @@ public class OrderPanel extends JPanel {
         if (side != -1) {
             btnAction.setText(side == 0 ? "매수" : "매도");
             btnAction.setBackground(side == 0 ? COLOR_BID : COLOR_ASK);
+            
+            if (lblMarketUnit != null) {
+                if (side == 0) { // 매수
+                    lblMarketUnit.setText("주문총액 (KRW)");
+                    valExpected.setText("예상 수량: -");
+                } else { // 매도
+                    lblMarketUnit.setText("주문수량 (" + selectedCoinCode + ")");
+                    valExpected.setText("예상 수령액: -");
+                }
+                // 탭을 바꾸면 입력창 초기화
+                marketAmountField.setText("");
+            }
         }
         updateInfoLabel();
     }
@@ -504,30 +542,28 @@ public class OrderPanel extends JPanel {
             String amtStr = marketAmountField.getText().replace(",", "").trim();
             
             if (currentSelectedPrice.compareTo(BigDecimal.ZERO) <= 0 || amtStr.isEmpty()) {
-                valExpected.setText(sideIdx == 0 ? "예상 수량: -" : "예상 금액: -");
+                valExpected.setText("-");
                 return;
             }
 
             BigDecimal inputVal = new BigDecimal(amtStr);
             
-            if (sideIdx == 0) { // 매수 (금액 입력 -> 수량 계산)
-                BigDecimal expectedQty = OrderCalc.calculateMarketBuyQuantity(inputVal, currentSelectedPrice);
+            if (sideIdx == 0) { 
+                // [매수] 입력값 = 총액(KRW) -> 결과 = 살 수 있는 수량(BTC)
+                // 수수료 로직은 OrderCalc에 있다고 가정 (여기선 단순 나누기 예시)
+                BigDecimal expectedQty = inputVal.divide(currentSelectedPrice, 8, BigDecimal.ROUND_DOWN);
                 valExpected.setText("예상 수량: " + expectedQty.toPlainString() + " " + selectedCoinCode);
-            } else { // 매도 (수량 입력 -> 금액 계산, *시장가 매도는 보통 수량을 입력함)
-                // 시뮬레이터 편의상 매도도 금액(평가금) 기준으로 판다고 가정하거나, 
-                // 혹은 UI를 수량 입력으로 바꿔야 하지만 여기선 기존 로직 유지
-                // 예: 10,000원어치 팔겠다 -> (10000/현재가) 만큼 팜
-                BigDecimal qtyToSell = inputVal.divide(currentSelectedPrice, 8, BigDecimal.ROUND_DOWN);
-                BigDecimal expectedKRW = OrderCalc.calculateMarketSellAmount(qtyToSell, currentSelectedPrice);
+                
+            } else { 
+                // [매도] 입력값 = 수량(BTC) -> 결과 = 받을 수 있는 돈(KRW)
+                // 내 비트코인 0.5개를 개당 1억에 팔면? -> 5천만 원
+                BigDecimal expectedKRW = inputVal.multiply(currentSelectedPrice);
                 valExpected.setText("예상 수령: " + String.format("%,.0f", expectedKRW) + " KRW");
             }
         } catch (Exception e) {
             valExpected.setText("계산 불가");
         }
     }
-    
-    
-    
     
     // 주문 실행 (매수/매도 버튼 클릭)
     private void handleOrderAction() {
@@ -540,41 +576,113 @@ public class OrderPanel extends JPanel {
     
     private void handleMarketOrder() {
         try {
+            // 1. 기초 검증
             if (currentSelectedPrice.compareTo(BigDecimal.ZERO) <= 0) {
                 throw new RuntimeException("시세를 먼저 선택해주세요.");
             }
             
-            BigDecimal inputAmount = new BigDecimal(marketAmountField.getText().replace(",", ""));
-            
-            // 실제 체결 로직
-            if (sideIdx == 0) { // 매수
-                // 잔고 체크
-                BigDecimal krwBal = mockBalance.getOrDefault("KRW", BigDecimal.ZERO);
-                if (krwBal.compareTo(inputAmount) < 0) throw new RuntimeException("KRW 잔고가 부족합니다.");
-                
-                // 수수료 포함된 구매 가능 수량 계산
-                BigDecimal buyQty = OrderCalc.calculateMarketBuyQuantity(inputAmount, currentSelectedPrice);
-                
-                // 잔고 차감 및 코인 추가
-                mockBalance.put("KRW", krwBal.subtract(inputAmount));
-                BigDecimal coinBal = mockBalance.getOrDefault(selectedCoinCode, BigDecimal.ZERO);
-                mockBalance.put(selectedCoinCode, coinBal.add(buyQty));
-                
-                JOptionPane.showMessageDialog(this, 
-                    String.format("[시장가 매수 체결]\n코인: %s\n가격: %,.0f\n수량: %.8f", 
-                    selectedCoinCode, currentSelectedPrice, buyQty));
-            } 
-            // 매도 로직 추가 가능...
+            String text = marketAmountField.getText().replace(",", "").trim();
+            if (text.isEmpty()) throw new RuntimeException("주문 내용을 입력해주세요.");
+            BigDecimal inputVal = new BigDecimal(text);
 
+            // ============================================================
+            // CASE 1: 시장가 매수 (BID)
+            // 입력값(inputVal) = 총 사용 금액(KRW)
+            // ============================================================
+            if (sideIdx == 0) { 
+                // 1) KRW 잔고 확인
+                BigDecimal krwBal = mockBalance.getOrDefault("KRW", BigDecimal.ZERO);
+                if (krwBal.compareTo(inputVal) < 0) {
+                    throw new RuntimeException("KRW 잔고가 부족합니다.");
+                }
+                
+                // 2) 수량 계산
+                BigDecimal buyQty = OrderCalc.calculateMarketBuyQuantity(inputVal, currentSelectedPrice);
+                
+                // 3) [핵심] DB 저장 시도
+                OrderDTO marketOrder = new OrderDTO();
+                marketOrder.setOrderId(System.currentTimeMillis()); // ID 생성
+                marketOrder.setSide("BID");
+                marketOrder.setStatus("DONE"); // 시장가는 즉시 완료
+
+                // executeMarketOrder(주문객체, 유저ID, 체결가, 체결수량, 총체결액)
+                boolean isSuccess = orderDAO.executeMarketOrder(
+                    marketOrder, 
+                    "test_user", 
+                    currentSelectedPrice, 
+                    buyQty, 
+                    inputVal // 매수일 땐 입력한 금액이 총 체결액
+                );
+
+                // 4) DB 성공 시 메모리/UI 반영
+                if (isSuccess) {
+                    mockBalance.put("KRW", krwBal.subtract(inputVal)); // 돈 차감
+                    BigDecimal coinBal = mockBalance.getOrDefault(selectedCoinCode, BigDecimal.ZERO);
+                    mockBalance.put(selectedCoinCode, coinBal.add(buyQty)); // 코인 증가
+                    
+                    JOptionPane.showMessageDialog(this, 
+                        String.format("[시장가 매수 체결]\n코인: %s\n체결가: %,.0f\n매수량: %.8f", 
+                        selectedCoinCode, currentSelectedPrice, buyQty));
+                } else {
+                    throw new RuntimeException("DB 저장 실패");
+                }
+            } 
+            
+            // ============================================================
+            // CASE 2: 시장가 매도 (ASK)
+            // 입력값(inputVal) = 판매 수량(BTC)
+            // ============================================================
+            else { 
+                // 1) 코인 잔고 확인
+                BigDecimal coinBal = mockBalance.getOrDefault(selectedCoinCode, BigDecimal.ZERO);
+                if (coinBal.compareTo(inputVal) < 0) {
+                    throw new RuntimeException(selectedCoinCode + " 잔고가 부족합니다.");
+                }
+
+                // 2) 받을 돈 계산
+                BigDecimal sellTotalKRW = inputVal.multiply(currentSelectedPrice);
+
+                // 3) [핵심] DB 저장 시도
+                OrderDTO marketOrder = new OrderDTO();
+                marketOrder.setOrderId(System.currentTimeMillis());
+                marketOrder.setSide("ASK");
+                marketOrder.setStatus("DONE");
+
+                // executeMarketOrder(주문객체, 유저ID, 체결가, 체결수량, 총체결액)
+                boolean isSuccess = orderDAO.executeMarketOrder(
+                    marketOrder, 
+                    "test_user", 
+                    currentSelectedPrice, 
+                    inputVal,    // 매도일 땐 입력한 값이 체결 수량
+                    sellTotalKRW // 계산된 총액
+                );
+
+                // 4) DB 성공 시 메모리/UI 반영
+                if (isSuccess) {
+                    mockBalance.put(selectedCoinCode, coinBal.subtract(inputVal)); // 코인 차감
+                    BigDecimal krwBal = mockBalance.getOrDefault("KRW", BigDecimal.ZERO);
+                    mockBalance.put("KRW", krwBal.add(sellTotalKRW)); // 돈 증가
+
+                    JOptionPane.showMessageDialog(this, 
+                        String.format("[시장가 매도 체결]\n코인: %s\n체결가: %,.0f\n수령액: %,.0f KRW", 
+                        selectedCoinCode, currentSelectedPrice, sellTotalKRW));
+                } else {
+                    throw new RuntimeException("DB 저장 실패");
+                }
+            }
+
+            // 공통 마무리
             updateInfoLabel(); // 잔고 갱신
             marketAmountField.setText(""); // 입력창 초기화
             
         } catch (Exception e) {
-            JOptionPane.showMessageDialog(this, "주문 실패: " + e.getMessage());
+            JOptionPane.showMessageDialog(this, "주문 실패: " + e.getMessage(), "에러", JOptionPane.ERROR_MESSAGE);
+            e.printStackTrace(); // 콘솔에 자세한 에러 출력
         }
     }
     
     private void handleLimitOrder() {
+        OrderDTO order = null; // 밖에서 선언해야 하단 DB 로직에서 사용 가능합니다.
         try {
             // 1. 입력값 검증
             String pStr = priceField.getText().replace(",", "").trim();
@@ -586,38 +694,44 @@ public class OrderPanel extends JPanel {
 
             BigDecimal price = new BigDecimal(pStr);
             BigDecimal qty = new BigDecimal(qStr);
-            BigDecimal total = price.multiply(qty); // 총 주문 금액
+            BigDecimal total = price.multiply(qty);
 
-            // 2. 자산 확인 및 잠금(Lock) 처리
-            String currency = (sideIdx == 0) ? "KRW" : selectedCoinCode; // 매수면 KRW, 매도면 코인 필요
+            // 2. 자산 확인 및 잠금 처리
+            String currency = (sideIdx == 0) ? "KRW" : selectedCoinCode;
             BigDecimal balance = mockBalance.getOrDefault(currency, BigDecimal.ZERO);
-            BigDecimal requiredAmount = (sideIdx == 0) ? total : qty; // 매수는 돈이, 매도는 코인이 필요
+            BigDecimal requiredAmount = (sideIdx == 0) ? total : qty;
 
             if (balance.compareTo(requiredAmount) < 0) {
                 throw new RuntimeException("주문 가능 잔고가 부족합니다.");
             }
 
-            // 3. 잔고 차감 -> 잠금 자산으로 이동
-            mockBalance.put(currency, balance.subtract(requiredAmount));
-            BigDecimal currentLocked = mockLocked.getOrDefault(currency, BigDecimal.ZERO);
-            mockLocked.put(currency, currentLocked.add(requiredAmount));
-
-            // 4. [핵심] 주문 객체(OrderDTO) 생성
-            OrderDTO order = new OrderDTO();
-            order.setOrderId(System.currentTimeMillis()); // 고유 ID
+            // 3. 주문 객체(OrderDTO) 생성
+            order = new OrderDTO();
+            order.setOrderId(System.currentTimeMillis());
             order.setSide(sideIdx == 0 ? "BID" : "ASK");
             order.setOriginalPrice(price);
             order.setOriginalVolume(qty);
             order.setRemainingVolume(qty);
-            order.setStatus("WAIT"); // 대기 상태
-            
-            // 5. [핵심] 리스트에 추가하고 화면 갱신!
-            openOrders.add(order);
-            refreshEditList(); // <--- 이게 있어야 화면에 뜹니다!
+            order.setStatus("WAIT");
 
-            // 6. 마무리
-            updateInfoLabel(); // 잔고 갱신
-            JOptionPane.showMessageDialog(this, "지정가 주문이 정상 접수되었습니다.");
+            // 4. [핵심] DB 저장 호출 (UI 변경 전에 먼저 실행)
+            // "test_user"는 DB에 INSERT INTO users로 미리 넣어둔 ID여야 합니다!
+            boolean isSuccess = orderDAO.insertOrder(order, "test_user"); 
+
+            if (!isSuccess) {
+                throw new RuntimeException("데이터베이스 저장에 실패했습니다.");
+            }
+
+            // 5. DB 저장 성공 시에만 메모리 잔고 및 UI 업데이트
+            mockBalance.put(currency, balance.subtract(requiredAmount));
+            BigDecimal currentLocked = mockLocked.getOrDefault(currency, BigDecimal.ZERO);
+            mockLocked.put(currency, currentLocked.add(requiredAmount));
+
+            openOrders.add(order);
+            refreshEditList();
+            updateInfoLabel();
+            
+            JOptionPane.showMessageDialog(this, "지정가 주문 접수 및 DB 저장 완료!");
 
         } catch (Exception e) {
             JOptionPane.showMessageDialog(this, "주문 오류: " + e.getMessage(), "알림", JOptionPane.ERROR_MESSAGE);
@@ -625,8 +739,17 @@ public class OrderPanel extends JPanel {
     }
 
     private JPanel createMarketForm() {
-        JPanel p = new JPanel(); p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS)); p.setBackground(Color.WHITE);
-        p.add(new JLabel("주문총액 (KRW)")); marketAmountField = new JTextField(); styleField(marketAmountField); p.add(marketAmountField);
+        JPanel p = new JPanel(); 
+        p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS)); 
+        p.setBackground(Color.WHITE);
+        
+        lblMarketUnit = new JLabel("주문총액 (KRW)"); 
+        p.add(lblMarketUnit);
+        
+        marketAmountField = new JTextField(); 
+        styleField(marketAmountField); 
+        p.add(marketAmountField);
+        
         p.add(Box.createVerticalStrut(10));
         valExpected = new JLabel("예상 수량: -");
         valExpected.setForeground(Color.GRAY);
