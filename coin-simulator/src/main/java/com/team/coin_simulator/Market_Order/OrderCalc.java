@@ -58,22 +58,4 @@ public class OrderCalc {
         if (price == null || qty == null) return BigDecimal.ZERO;
         return price.multiply(qty).setScale(SCALE_KRW, RoundingMode.DOWN);
     }
-    
-    //시장가 매수 시 예상 수량 계산 (금액 / 현재가)
-   public static BigDecimal calculateMarketBuyQuantity(BigDecimal budget, BigDecimal currentPrice) {
-       if (currentPrice == null || currentPrice.compareTo(BigDecimal.ZERO) <= 0 || budget == null) {
-           return BigDecimal.ZERO;
-       }
-       // 소수점 8자리까지 계산 (절사)
-       return budget.divide(currentPrice, 8, RoundingMode.DOWN);
-   }
-
-   //시장가 매도 시 예상 획득 금액 계산 (수량 * 현재가)
-   public static BigDecimal calculateMarketSellAmount(BigDecimal quantity, BigDecimal currentPrice) {
-       if (currentPrice == null || quantity == null) {
-           return BigDecimal.ZERO;
-       }
-       return quantity.multiply(currentPrice).setScale(2, RoundingMode.DOWN);
-   }
 }
-
