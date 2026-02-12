@@ -48,7 +48,7 @@ public class CandleDAO {
     // 2. 특정 종목의 캔들 데이터 조회 (최신순)
     public List<CandleDTO> getCandles(String market, int unit, int limit) {
         List<CandleDTO> list = new ArrayList<>();
-        String sql = "SELECT * FROM candles WHERE market = ? AND unit = ? " +
+        String sql = "SELECT * FROM market_candle WHERE market = ? AND unit = ? " +
                      "ORDER BY candle_date_time_kst DESC LIMIT ?";
 
         try (Connection conn = DBConnection.getConnection();
