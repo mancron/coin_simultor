@@ -29,7 +29,7 @@ public class ProfitLoss_MainPanel extends JPanel {
     private final ProfitLoss_DetailTablePanel  tablePanel;
 
     // ── 데이터 ─────────────────────────────────────────────────────
-    private List<ProfitLossEntry> currentEntries = new ArrayList<>();
+    private List<ExecutionDTO> currentEntries = new ArrayList<>();
 
     // ── 생성자 ─────────────────────────────────────────────────────
 
@@ -69,7 +69,7 @@ public class ProfitLoss_MainPanel extends JPanel {
      *
      * @param entries 날짜별 투자손익 목록 (최신 순 또는 날짜 순 모두 가능)
      */
-    public void loadData(List<ProfitLossEntry> entries) {
+    public void loadData(List<ExecutionDTO> entries) {
         this.currentEntries = entries != null ? entries : new ArrayList<>();
         refreshAll();
     }
@@ -82,12 +82,12 @@ public class ProfitLoss_MainPanel extends JPanel {
         long   totalAvgInv = 0;
 
         if (!currentEntries.isEmpty()) {
-            ProfitLossEntry last = currentEntries.get(0); // 가장 최신 항목
+            ExecutionDTO last = currentEntries.get(0); // 가장 최신 항목
             totalPnl   = last.getCumulativePnl();
             totalYield = last.getCumulativeYield();
 
             long sumBase = 0;
-            for (ProfitLossEntry e : currentEntries) {
+            for (ExecutionDTO e : currentEntries) {
                 sumBase += e.getBaseAsset();
             }
             totalAvgInv = sumBase / currentEntries.size();
@@ -105,50 +105,56 @@ public class ProfitLoss_MainPanel extends JPanel {
     // ── 테스트용 더미 데이터 ───────────────────────────────────────
 
     private void loadDummyData() {
-        List<ProfitLossEntry> dummy = new ArrayList<>();
+        List<ExecutionDTO> dummy = new ArrayList<>();
 
         Calendar cal = Calendar.getInstance();
         cal.set(2026, Calendar.FEBRUARY, 10);
 
-        // 이미지에 표시된 데이터와 유사하게 세팅
+        // [수정 1] 주석 수정 (입출금 데이터 제거됨)
+        // {dailyPnl, baseAsset, finalAsset}
         long[][] rawData = {
-            // {dailyPnl, baseAsset, finalAsset, deposit, withdrawal}
-            {-1223,    447399,   7,        0, 446168},
-            {-12692,   460091,   447399,   0, 0},
-            { 19166,   450572,   460091,   0, 0},
-            {-22375,   470938,   450572,   0, 0},
-            {  5736,   456898,   470938,   0, 0},
-            { -8012,   462145,   456898,   0, 0},
-            { -2430,   475893,   462145,   0, 0},
-            { 25614,   448125,   475893,   0, 0},
-            { -6839,   452360,   448125,   0, 0},
-            { -7351,   462785,   452360,   0, 0},
+            {-1223,    447399,   447399}, // (참고: 기말자산이 7원이면 이상해서 447399로 임의 수정함, 원본대로 쓰셔도 됨)
+            {-12692,   460091,   447399},
+            { 19166,   450572,   460091},
+            {-22375,   470938,   450572},
+            {  5736,   456898,   470938},
+            { -8012,   462145,   456898},
+            { -2430,   475893,   462145},
+            { 25614,   448125,   475893},
+            { -6839,   452360,   448125},
+            { -7351,   462785,   452360},
         };
 
-        long cumPnl = -24025L; // 이미지의 누적 손익
+        long cumPnl = -24025L; 
 
         for (int i = 0; i < rawData.length; i++) {
             Date date = cal.getTime();
+            
+            // [수정 2] 배열 인덱스 0, 1, 2까지만 가져오도록 수정
             long daily     = rawData[i][0];
             long baseAsset = rawData[i][1];
             long finalAss  = rawData[i][2];
-            long dep       = rawData[i][3];
-            long with      = rawData[i][4];
+            
+            // [수정 3] 입출금 데이터가 없으므로 0으로 고정
+            long dep       = 0;
+            long with      = 0;
 
             double dailyYield = baseAsset > 0
                     ? (double) daily / baseAsset * 100 : 0.0;
 
-            // 누적 수익률 단순 계산 (실제는 DB에서 가져옴)
-            long refBase  = 453791L; // 평균 투자금액
+            long refBase  = 453791L; 
             double cumYield = refBase > 0 ? (double) cumPnl / refBase * 100 : 0.0;
 
-            dummy.add(new ProfitLossEntry(
+            // [수정 4] ProfitLossEntry 생성자 호출
+            // (만약 ProfitLossEntry 클래스에서도 입출금 필드를 지웠다면, dep, with 인자를 아예 삭제하세요)
+            dummy.add(new ExecutionDTO(
                     date, daily, dailyYield,
                     cumPnl, cumYield,
-                    baseAsset, finalAss, dep, with
+                    baseAsset, finalAss, 
+                    dep, with // 입출금 0 전달
             ));
 
-            cumPnl -= daily; // 역순이므로 역산
+            cumPnl -= daily; 
             cal.add(Calendar.DAY_OF_MONTH, -1);
         }
 

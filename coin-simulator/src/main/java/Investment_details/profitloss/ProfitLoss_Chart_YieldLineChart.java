@@ -99,11 +99,11 @@ public class ProfitLoss_Chart_YieldLineChart extends JPanel {
      * 외부에서 데이터 업데이트 시 호출
      * @param entries 날짜-누적수익률 목록
      */
-    public void updateData(List<ProfitLossEntry> entries) {
+    public void updateData(List<ExecutionDTO> entries) {
         series.clear();
         if (entries == null || entries.isEmpty()) return;
 
-        for (ProfitLossEntry e : entries) {
+        for (ExecutionDTO e : entries) {
             series.addOrUpdate(new Day(e.getDate()), e.getCumulativeYield());
         }
     }

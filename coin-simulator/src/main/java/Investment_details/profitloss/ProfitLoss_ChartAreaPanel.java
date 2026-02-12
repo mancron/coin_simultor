@@ -31,7 +31,7 @@ public class ProfitLoss_ChartAreaPanel extends JPanel {
      * 메인패널에서 데이터가 바뀔 때 호출
      * 두 차트를 동시에 업데이트한다
      */
-    public void updateCharts(List<ProfitLossEntry> entries) {
+    public void updateCharts(List<ExecutionDTO> entries) {
         yieldLineChart.updateData(entries);
         pnlBarChart.updateData(entries);
     }

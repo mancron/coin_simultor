@@ -11,14 +11,14 @@ import java.util.List;
 
 /**
  * 투자손익 하단 상세 테이블 패널
- * 이미지 기준 컬럼: 일자 / 일일 손익 / 일일 수익률 / 누적 손익 / 누적 수익률 / 기초자산 / 기말자산 / 입금 / 출금
- * ProfitLoss_MainPanel 에서 호출, 맨 밑에 배치
+ * 수정됨: 입금, 출금 컬럼 제거
  */
 public class ProfitLoss_DetailTablePanel extends JPanel {
 
+    // [수정 1] COLUMNS 배열에서 "입금", "출금" 제거
     private static final String[] COLUMNS = {
             "일자", "일일 손익", "일일 수익률", "누적 손익", "누적 수익률",
-            "기초 자산", "기말 자산", "입금", "출금"
+            "기초 자산", "기말 자산"
     };
 
     private final DefaultTableModel tableModel;
@@ -34,13 +34,11 @@ public class ProfitLoss_DetailTablePanel extends JPanel {
         setLayout(new BorderLayout());
         setBackground(Color.WHITE);
 
-        // 테이블 상단 제목 라벨
         JLabel titleLabel = new JLabel("투자손익 상세");
         titleLabel.setFont(new Font("맑은 고딕", Font.BOLD, 13));
         titleLabel.setBorder(BorderFactory.createEmptyBorder(8, 12, 6, 0));
         add(titleLabel, BorderLayout.NORTH);
 
-        // 테이블 모델 (수정 불가)
         tableModel = new DefaultTableModel(COLUMNS, 0) {
             @Override
             public boolean isCellEditable(int row, int column) { return false; }
@@ -64,7 +62,6 @@ public class ProfitLoss_DetailTablePanel extends JPanel {
         add(scrollPane, BorderLayout.CENTER);
     }
 
-    /** 헤더 스타일 */
     private void styleHeader() {
         JTableHeader header = table.getTableHeader();
         header.setBackground(new Color(248, 248, 248));
@@ -84,34 +81,32 @@ public class ProfitLoss_DetailTablePanel extends JPanel {
         }
     }
 
-    /** 컬럼별 정렬 및 색상 렌더러 */
     private void styleColumns() {
         // 일자 - 중앙
         table.getColumnModel().getColumn(0).setCellRenderer(buildCenterRenderer());
-        table.getColumnModel().getColumn(0).setPreferredWidth(60);
-
-        // 일일 손익, 누적 손익 - 우측 + 색상
+        
+        // 일일/누적 손익/수익률 (인덱스 1~4)
         table.getColumnModel().getColumn(1).setCellRenderer(buildColorRenderer(true));
         table.getColumnModel().getColumn(3).setCellRenderer(buildColorRenderer(true));
-
-        // 일일 수익률, 누적 수익률 - 우측 + 색상 (% 포함)
         table.getColumnModel().getColumn(2).setCellRenderer(buildColorRenderer(false));
         table.getColumnModel().getColumn(4).setCellRenderer(buildColorRenderer(false));
 
-        // 기초자산, 기말자산, 입금, 출금 - 우측 정렬
+        // [수정 2] 기초자산(5), 기말자산(6)만 우측 정렬 (입출금 인덱스 7,8 제거됨)
         DefaultTableCellRenderer rightRenderer = buildRightRenderer();
-        for (int i = 5; i <= 8; i++) {
+        for (int i = 5; i <= 6; i++) {
             table.getColumnModel().getColumn(i).setCellRenderer(rightRenderer);
         }
 
-        // 컬럼 너비 조정
-        int[] widths = {60, 100, 90, 100, 90, 90, 90, 70, 70};
+        // [수정 3] 컬럼 너비 배열 수정 (마지막 70, 70 제거 및 전체 비율 조정)
+        // 기존 너비 합이 대략 테이블 꽉 채우게 조정
+        int[] widths = {60, 100, 90, 100, 90, 110, 110}; 
+        
         for (int i = 0; i < widths.length; i++) {
-            table.getColumnModel().getColumn(i).setPreferredWidth(widths[i]);
+            if (i < table.getColumnCount()) { // 안전장치
+                table.getColumnModel().getColumn(i).setPreferredWidth(widths[i]);
+            }
         }
     }
-
-    // ---- 렌더러 헬퍼 ----
 
     private DefaultTableCellRenderer buildCenterRenderer() {
         DefaultTableCellRenderer r = new DefaultTableCellRenderer();
@@ -128,7 +123,6 @@ public class ProfitLoss_DetailTablePanel extends JPanel {
         return r;
     }
 
-    /** 양수(빨강)/음수(파랑) 색상 렌더러 */
     private DefaultTableCellRenderer buildColorRenderer(boolean isKrw) {
         return new DefaultTableCellRenderer() {
             {
@@ -155,17 +149,11 @@ public class ProfitLoss_DetailTablePanel extends JPanel {
         };
     }
 
-    // ---- 데이터 업데이트 ----
-
-    /**
-     * 메인패널에서 데이터 변경 시 호출
-     * @param entries 전체 손익 목록 (최신 -> 과거 순으로 넘겨도 됨)
-     */
-    public void updateTable(List<ProfitLossEntry> entries) {
+    public void updateTable(List<ExecutionDTO> entries) {
         tableModel.setRowCount(0);
         if (entries == null) return;
 
-        for (ProfitLossEntry e : entries) {
+        for (ExecutionDTO e : entries) {
             String dateStr = sdf.format(e.getDate());
 
             // 일일 손익
@@ -184,6 +172,7 @@ public class ProfitLoss_DetailTablePanel extends JPanel {
             double cy = e.getCumulativeYield();
             String cyStr = (cy >= 0 ? "+" : "") + String.format("%.2f%%", cy);
 
+            // [수정 4] addRow에서 입금, 출금 데이터 제외 (총 7개 컬럼)
             tableModel.addRow(new Object[]{
                     dateStr,
                     dpStr,
@@ -191,9 +180,7 @@ public class ProfitLoss_DetailTablePanel extends JPanel {
                     cpStr,
                     cyStr,
                     String.format("%,d", e.getBaseAsset()),
-                    String.format("%,d", e.getFinalAsset()),
-                    e.getDeposit() > 0 ? String.format("%,d", e.getDeposit()) : "0",
-                    e.getWithdrawal() > 0 ? String.format("%,d", e.getWithdrawal()) : "0"
+                    String.format("%,d", e.getFinalAsset())
             });
         }
     }

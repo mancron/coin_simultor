@@ -110,11 +110,11 @@ public class ProfitLoss_Chart_PnLBarChart extends JPanel {
      * 외부에서 데이터 업데이트 시 호출
      * @param entries 날짜-일별손익 목록
      */
-    public void updateData(List<ProfitLossEntry> entries) {
+    public void updateData(List<ExecutionDTO> entries) {
         dataset.clear();
         if (entries == null || entries.isEmpty()) return;
 
-        for (ProfitLossEntry e : entries) {
+        for (ExecutionDTO e : entries) {
             String label = String.format("%02d.%02d",
                     e.getDate().getMonth() + 1,
                     e.getDate().getDate());
