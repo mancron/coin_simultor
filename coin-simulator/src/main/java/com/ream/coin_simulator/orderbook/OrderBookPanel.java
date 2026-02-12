@@ -21,52 +21,49 @@ import javax.swing.table.DefaultTableModel;
 class OrderBookPanel extends JPanel {
     private DefaultTableModel askModel;
     private DefaultTableModel bidModel;
-    
-    // 메소드 밖에서도 쓸 수 있도록 멤버 변수로 선언
     private JTable askTable;
     private JTable bidTable;
     private JScrollPane scrollPane;
-
     private boolean isFirstUpdate = true;
-    
-    public OrderBookPanel() {
-        // 레이아웃을 BorderLayout으로 설정 (단일 스크롤을 위해)
+    private String coinSymbol; // 추가
+
+    public OrderBookPanel(String coinSymbol) {
+        this.coinSymbol = coinSymbol; // 전달받은 심볼 저장
         setLayout(new BorderLayout());
         initComponents();
     }
 
     private void initComponents() {
-        String[] columns = {"Price (Change %)", "Quantity (BTC)"};
+        // Quantity 옆의 괄호에 동적으로 코인 심볼 삽입
+        String[] columns = {"Price (Change %)", "Quantity (" + coinSymbol + ")"};
 
-        // 매도 영역 설정
+        // 1. 테이블 설정
         askModel = new DefaultTableModel(columns, 0);
         askTable = createStyledTable(askModel, new Color(240, 248, 255), Color.BLUE);
         
-        // 매수 영역 설정 (헤더 숨김)
         bidModel = new DefaultTableModel(columns, 0);
         bidTable = createStyledTable(bidModel, new Color(255, 245, 245), Color.RED);
-        bidTable.setTableHeader(null);
+        bidTable.setTableHeader(null); 
 
-        // 2. 두 테이블을 하나로 묶을 컨테이너 패널
+        // 2. 컨테이너 설정
         JPanel container = new JPanel();
         container.setLayout(new BoxLayout(container, BoxLayout.Y_AXIS));
         container.setBackground(Color.WHITE);
-
-        container.add(askTable.getTableHeader()); // 매도 헤더 추가
         container.add(askTable);
         container.add(bidTable);
 
-        // 3. 단일 스크롤 팬 생성 및 할당
         scrollPane = new JScrollPane(container);
         scrollPane.setBorder(null);
-        
-        // 스크롤바를 다시 보이게 설정 (사용자가 조절할 수 있도록)
         scrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
-        scrollPane.getVerticalScrollBar().setUnitIncrement(16); // 휠 스크롤 부드럽게
+        
+        // 휠 스크롤 속도 조절
+        scrollPane.getVerticalScrollBar().setUnitIncrement(16);
         
         add(scrollPane, BorderLayout.CENTER);
-        
-        add(scrollPane, BorderLayout.CENTER);
+    }
+    // Frame에서 헤더를 가져갈 수 있도록 public 메소드 추가
+    public javax.swing.table.JTableHeader getTableHeader() {
+        return askTable.getTableHeader();
     }
 
     private JTable createStyledTable(DefaultTableModel model, Color bgColor, Color fgColor) {

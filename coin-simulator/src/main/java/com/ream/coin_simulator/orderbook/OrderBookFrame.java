@@ -2,13 +2,10 @@ package com.ream.coin_simulator.orderbook;
 
 import java.awt.BorderLayout;
 import java.awt.Color;
-import java.awt.Font;
-import java.util.Collections;
-import java.util.TreeMap;
 
 import javax.swing.BorderFactory;
+import javax.swing.BoxLayout;
 import javax.swing.JFrame;
-import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
@@ -18,29 +15,32 @@ import okhttp3.Request;
 
 public class OrderBookFrame extends JFrame {
     private OrderBookPanel orderBookPanel;
-    private JLabel priceLabel;
-    private double prevClose = 100000000.0; // 전일 종가 기준
-
-    public OrderBookFrame() {
-        setTitle("Real-time Exchange - BTC/KRW");
+    private String coinSymbol;
+    public OrderBookFrame(String coinSymbol) { // 생성자에서 코인 심볼을 받음
+        this.coinSymbol = coinSymbol;
+        setTitle("Real-time Exchange - " + coinSymbol + "/KRW");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setSize(500, 850);
         setLocationRelativeTo(null);
 
-        // 상단 헤더
-        JPanel headerPanel = new JPanel(new BorderLayout());
-        headerPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
-        headerPanel.setBackground(Color.WHITE);
-        priceLabel = new JLabel("연결 중...");
-        priceLabel.setFont(new Font("SansSerif", Font.BOLD, 26));
-        headerPanel.add(new JLabel("BTC (Bitcoin)"), BorderLayout.NORTH);
-        headerPanel.add(priceLabel, BorderLayout.CENTER);
+        // 1. 상단 컨테이너 (현재가 레이블 제거됨)
+        JPanel topContainer = new JPanel();
+        topContainer.setLayout(new BoxLayout(topContainer, BoxLayout.Y_AXIS));
+        topContainer.setBackground(Color.WHITE);
 
-        orderBookPanel = new OrderBookPanel();
-        setLayout(new BorderLayout());
-        add(headerPanel, BorderLayout.NORTH);
-        add(orderBookPanel, BorderLayout.CENTER);
+        // 2. 패널 초기화 (심볼 전달)
+        orderBookPanel = new OrderBookPanel(coinSymbol);
         
+        // 3. 테이블 헤더 추출 및 추가
+        javax.swing.table.JTableHeader tableHeader = orderBookPanel.getTableHeader();
+        tableHeader.setBackground(Color.WHITE);
+        tableHeader.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, Color.LIGHT_GRAY));
+
+        topContainer.add(tableHeader);
+
+        setLayout(new BorderLayout());
+        add(topContainer, BorderLayout.NORTH);
+        add(orderBookPanel, BorderLayout.CENTER);
 
         connectUpbit();
     }
@@ -51,25 +51,17 @@ public class OrderBookFrame extends JFrame {
                 .url("wss://api.upbit.com/websocket/v1")
                 .build();
 
-        // "KRW-BTC" 코인의 실시간 호가 연결
-        UpbitOrderBookService listener = new UpbitOrderBookService(this, orderBookPanel, "KRW-BTC");
+        // market 변수를 동적으로 설정 (KRW-BTC, KRW-ETH 등)
+        String market = "KRW-" + coinSymbol;
+        UpbitOrderBookService listener = new UpbitOrderBookService(this, orderBookPanel, market);
         client.newWebSocket(request, listener);
     }
     
-    public void updatePrice(double currentPrice) {
-        SwingUtilities.invokeLater(() -> {
-            double change = ((currentPrice - prevClose) / prevClose) * 100;
-            priceLabel.setText(String.format("%,.0f KRW (%.2f%%)", currentPrice, change));
-            
-            // 상승 시 빨강, 하락 시 파랑 색상 변경
-            if (currentPrice > prevClose) priceLabel.setForeground(Color.RED);
-            else if (currentPrice < prevClose) priceLabel.setForeground(Color.BLUE);
-            else priceLabel.setForeground(Color.BLACK);
-        });
-    }
+    public void updatePrice(double currentPrice) {}
 
     public static void main(String[] args) {
         try { UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName()); } catch (Exception e) {}
-        SwingUtilities.invokeLater(() -> new OrderBookFrame().setVisible(true));
+        // 실행 시 코인 심볼을 넘겨줍니다.
+        SwingUtilities.invokeLater(() -> new OrderBookFrame("BTC").setVisible(true));
     }
 }
