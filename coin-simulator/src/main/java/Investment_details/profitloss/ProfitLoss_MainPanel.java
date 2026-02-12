@@ -3,6 +3,7 @@ package Investment_details.profitloss;
 import DTO.ExecutionDTO;
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
+import javax.swing.border.MatteBorder;
 import java.awt.*;
 import java.util.List;
 
@@ -11,6 +12,8 @@ import java.util.List;
  *
  * 레이아웃:
  * ┌─────────────────────────────────────────┐
+ * │  ProfitLoss_PeriodSelector    (TOP)     │ ← 기간 선택 버튼
+ * ├─────────────────────────────────────────┤
  * │  ProfitLoss_SummaryStatPanel  (NORTH)   │
  * ├─────────────────────────────────────────┤
  * │  ProfitLoss_ChartAreaPanel    (CENTER)  │
@@ -20,6 +23,7 @@ import java.util.List;
  */
 public class ProfitLoss_MainPanel extends JPanel {
 
+    private final ProfitLoss_PeriodSelector    periodSelector;
     private final ProfitLoss_SummaryStatPanel  summaryPanel;
     private final ProfitLoss_ChartAreaPanel    chartAreaPanel;
     private final ProfitLoss_DetailTablePanel  tablePanel;
@@ -27,6 +31,7 @@ public class ProfitLoss_MainPanel extends JPanel {
     private final ProfitLossDAO dao;
     private final String userId;
     private List<ExecutionDTO> currentExecutions;
+    private int currentDays = 30; // 현재 조회 기간
 
     /**
      * 투자손익 메인 패널 생성자
@@ -41,25 +46,45 @@ public class ProfitLoss_MainPanel extends JPanel {
         setBackground(Color.WHITE);
 
         // 1. 하위 패널 생성
+        periodSelector = new ProfitLoss_PeriodSelector();
         summaryPanel   = new ProfitLoss_SummaryStatPanel();
         chartAreaPanel = new ProfitLoss_ChartAreaPanel();
         tablePanel     = new ProfitLoss_DetailTablePanel();
 
-        // 2. 상단 컨테이너 (요약 + 차트)
+        // 2. 기간 선택 리스너 등록
+        periodSelector.addPeriodChangeListener(days -> {
+            currentDays = days;
+            loadRecentData(days);
+        });
+
+        // 3. 상단 컨테이너 (기간선택 + 요약 + 차트)
         JPanel topContainer = new JPanel(new BorderLayout(0, 0));
         topContainer.setBackground(Color.WHITE);
-        topContainer.setBorder(new EmptyBorder(0, 0, 4, 0));
-        topContainer.add(summaryPanel,   BorderLayout.NORTH);
-        topContainer.add(chartAreaPanel, BorderLayout.CENTER);
+        
+        // 기간 선택 버튼 영역
+        JPanel periodWrapper = new JPanel(new BorderLayout());
+        periodWrapper.setBackground(Color.WHITE);
+        periodWrapper.setBorder(new MatteBorder(0, 0, 1, 0, new Color(230, 230, 230)));
+        periodWrapper.add(periodSelector, BorderLayout.CENTER);
+        
+        // 요약 + 차트 영역
+        JPanel summaryChartPanel = new JPanel(new BorderLayout(0, 0));
+        summaryChartPanel.setBackground(Color.WHITE);
+        summaryChartPanel.setBorder(new EmptyBorder(0, 0, 4, 0));
+        summaryChartPanel.add(summaryPanel,   BorderLayout.NORTH);
+        summaryChartPanel.add(chartAreaPanel, BorderLayout.CENTER);
+        
+        topContainer.add(periodWrapper, BorderLayout.NORTH);
+        topContainer.add(summaryChartPanel, BorderLayout.CENTER);
 
-        // 3. 테이블 높이 고정
+        // 4. 테이블 높이 고정
         tablePanel.setPreferredSize(new Dimension(0, 260));
 
-        // 4. 전체 레이아웃
+        // 5. 전체 레이아웃
         add(topContainer, BorderLayout.CENTER);
         add(tablePanel,   BorderLayout.SOUTH);
 
-        // 5. 초기 데이터 로드 (최근 30일)
+        // 6. 초기 데이터 로드 (최근 30일)
         loadRecentData(30);
     }
 
@@ -130,16 +155,16 @@ public class ProfitLoss_MainPanel extends JPanel {
     /**
      * 독립 실행 테스트
      */
-    public static void main(String[] args) {
-        SwingUtilities.invokeLater(() -> {
-            JFrame frame = new JFrame("투자손익 테스트");
-            frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-            frame.setSize(1000, 700);
-            frame.setLocationRelativeTo(null);
-
-            ProfitLoss_MainPanel panel = new ProfitLoss_MainPanel("user_01");
-            frame.add(panel);
-            frame.setVisible(true);
-        });
-    }
+//    public static void main(String[] args) {
+//        SwingUtilities.invokeLater(() -> {
+//            JFrame frame = new JFrame("투자손익 테스트");
+//            frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+//            frame.setSize(1000, 700);
+//            frame.setLocationRelativeTo(null);
+//
+//            ProfitLoss_MainPanel panel = new ProfitLoss_MainPanel("user_01");
+//            frame.add(panel);
+//            frame.setVisible(true);
+//        });
+//    }
 }
