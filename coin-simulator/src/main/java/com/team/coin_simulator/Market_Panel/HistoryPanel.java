@@ -24,7 +24,6 @@ import javax.swing.event.DocumentEvent; // 검색 이벤트
 import javax.swing.event.DocumentListener; // 검색 리스너
 
 import com.team.coin_simulator.CoinConfig;
-import com.team.coin_simulator.Market_Order.OrderPanel;
 
 import DAO.AssetDAO;
 import DAO.UpbitWebSocketDao;
@@ -60,14 +59,9 @@ public class HistoryPanel extends JPanel implements UpbitWebSocketDao.TickerList
     // 데이터 관리
     private HashMap<String, List<CoinRowPanel>> coinMap = new HashMap<>();
     private List<TabButton> tabButtons = new ArrayList<>();
-    
-    //OrderPanel과 연결
-    private OrderPanel orderPanel;
 
     
-    public HistoryPanel(OrderPanel orderPanel) {
-    	this.orderPanel = orderPanel;
-    	
+    public HistoryPanel() {
         setLayout(new BorderLayout());
         setBackground(Color.WHITE);
         setMinimumSize(new Dimension(300, 500));
@@ -281,39 +275,6 @@ public class HistoryPanel extends JPanel implements UpbitWebSocketDao.TickerList
         
         List<AssetDTO> assets = assetDAO.getUserAssets(loginUser); 
 
-        // 2. HTML 태그를 사용하여 두 줄로 만들기
-        // <br>: 줄바꿈, <font>: 폰트 스타일 (코드는 조금 작고 회색으로)
-        String displayName = "<html><center>" + krName + "<br><font size='3' color='gray'>" + code + "</font></center></html>";
-        
-        // 3. 패널 생성 시에는 'displayName'(화면용)을 전달
-        CoinRowPanel row = new CoinRowPanel(displayName, price, fluc);
-        
-        //클릭 이벤트를 처리하는 공통 리스너 생성
-        java.awt.event.MouseAdapter commonListener = new java.awt.event.MouseAdapter() {
-            @Override
-            public void mouseClicked(java.awt.event.MouseEvent e) {
-                if (orderPanel != null) {
-                    // 클릭 효과 (잠깐 배경색 변경 등) 주면 더 좋음
-                    System.out.println("클릭됨: " + code); 
-                    orderPanel.setSelectedCoin(code, row.getPrice());
-                }
-            }
-        };
-
-        // 1. 패널 자체에 리스너 부착
-        row.addMouseListener(commonListener);
-        
-        // 2. 패널 내부의 모든 컴포넌트(라벨들)에도 리스너 부착
-        for (java.awt.Component c : row.getComponents()) {
-            c.addMouseListener(commonListener);
-        }
-        
-        // 4. UI 탭에 추가
-        switch (type) {
-            case 0: allCoinPanel.add(row); break;
-            case 1: ownedCoinPanel.add(row); break;
-            case 2: interestCoinPanel.add(row); break;
-
         if (assets.isEmpty()) {
             ownedCoinPanel.add(new JLabel("보유 중인 코인이 없습니다.", SwingConstants.CENTER));
         } else {
@@ -329,7 +290,6 @@ public class HistoryPanel extends JPanel implements UpbitWebSocketDao.TickerList
                 
                 coinMap.computeIfAbsent(symbol, k -> new ArrayList<>()).add(row);
             }
-
         }
         
         ownedCoinPanel.revalidate();
@@ -363,16 +323,6 @@ public class HistoryPanel extends JPanel implements UpbitWebSocketDao.TickerList
     }
     
 
-   
-    public void updateCoinPrice(String symbol, String newPrice, String newFluc) {
-        // 1. 리스트(CoinRowPanel) 갱신 (기존 코드)
-        if (coinMap.containsKey(symbol)) {
-            List<CoinRowPanel> rows = coinMap.get(symbol);
-            for (CoinRowPanel row : rows) {
-                row.updateData(newPrice, newFluc); 
-            }
-
-
     private void initDataAndWebSocket() {
         // 1. 코인 목록 UI 초기화 (기존 유지)
         for (String code : CoinConfig.getCodes()) {
@@ -392,11 +342,6 @@ public class HistoryPanel extends JPanel implements UpbitWebSocketDao.TickerList
         for (WatchlistDTO dto : dbWatchlist) {
             addNewCoin(1, dto.getMarket(), "Loading...", "0.00", "0");
         }
-        
-        // 2. 주문 패널(OrderPanel)에도 실시간 가격 전달
-        if (orderPanel != null) {
-            orderPanel.updateRealTimePrice(symbol, newPrice);
-        }
     }
     
    
@@ -414,40 +359,7 @@ public class HistoryPanel extends JPanel implements UpbitWebSocketDao.TickerList
     public static void main(String[] args) {
         JFrame frame = new JFrame("코인 리스트 판넬");
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        frame.setLayout(new GridLayout(1, 2)); // 화면을 반반 나눔
-
-        // 1. 주문 패널
-        OrderPanel orderPanel = new OrderPanel();
         
-
-        // 2. 위에서 만든 주문 패널을 넘김
-        HistoryPanel historyPanel = new HistoryPanel(orderPanel);
-        
-        // 3. 화면에 붙일 때도 방금 만든 그 변수들을 그대로 사용
-        frame.add(historyPanel); // 왼쪽
-        frame.add(orderPanel);   // 오른쪽
-        
-        // ------------------------------------------------------
-
-        // DAO 연결 (웹소켓)
-        UpbitWebSocketDao webSocketDao = new UpbitWebSocketDao(historyPanel);
-        
-        frame.pack();
-        frame.setSize(800, 600);
-        frame.setVisible(true);
-
-        // 초기 데이터 세팅
-        for (String code : CoinConfig.getCodes()) {
-            historyPanel.addNewCoin(0, code, "연결 중...", "0.00");
-        }
-        
-        // 웹소켓 시작
-        OkHttpClient client = new OkHttpClient();
-        Request request = new Request.Builder()
-                .url("wss://api.upbit.com/websocket/v1")
-                .build();
-        client.newWebSocket(request, webSocketDao);
-
         HistoryPanel historyPanel = new HistoryPanel();
         frame.add(historyPanel);
         
