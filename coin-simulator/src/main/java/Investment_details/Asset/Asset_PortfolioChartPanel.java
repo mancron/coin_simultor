@@ -52,7 +52,7 @@ public class Asset_PortfolioChartPanel extends JPanel {
         // 3. 차트 디자인 커스텀
         RingPlot plot = (RingPlot) chart.getPlot();
         plot.setLabelFont(labelFont);
-        plot.setSectionDepth(0.35); // 도넛의 두께 설정 (0.0 ~ 1.0)
+        plot.setSectionDepth(0.5); // 도넛의 두께 설정 (0.0 ~ 1.0)
         // 라벨 포맷 설정: {0}=이름, {1}=값, {2}=퍼센트
         plot.setLabelGenerator(new StandardPieSectionLabelGenerator("{0} ({2})")); 
         plot.setBackgroundPaint(Color.WHITE); // 배경색

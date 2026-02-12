@@ -1,171 +1,162 @@
 package Investment_details.Asset;
 
-import java.awt.BorderLayout;
-import java.awt.Color;
-import java.math.BigDecimal;
-import java.math.RoundingMode;
-import java.util.ArrayList;
-import java.util.List;
-
-import javax.swing.JPanel;
-import javax.swing.JSplitPane;
-import javax.swing.SwingUtilities;
-
 import DAO.AssetDAO;
 import DAO.UpbitWebSocketDao;
 import DTO.AssetDTO;
 import DTO.MyAssetStatusDTO;
 
-// [변경 1] TickerListener 구현 (시세 업데이트 수신)
+import javax.swing.*;
+import java.awt.*;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * 보유자산 메인 패널 (업비트 스타일)
+ *
+ * 레이아웃:
+ * ┌─────────────────────────────────────────────┐
+ * │  Asset_SummaryPanel  (NORTH - 상단 요약)     │
+ * ├─────────────────────────────────────────────┤
+ * │  Assets_TablePanel   (CENTER - 보유목록)     │
+ * └─────────────────────────────────────────────┘
+ */
 public class Asset_MainPanel extends JPanel implements UpbitWebSocketDao.TickerListener {
 
-    private Asset_SummaryPanel summaryPanel;
-    private Asset_PortfolioChartPanel chartPanel;
-    private Assets_TablePanel tablePanel;
-    
-    private AssetDAO assetDAO;
-    private String userId;
-    
-    // [변경 2] 자산 리스트를 멤버 변수로 보관 (매번 DB 조회하지 않기 위해)
+    private final Asset_SummaryPanel summaryPanel;
+    private final Assets_TablePanel  tablePanel;
+
+    private final AssetDAO assetDAO;
+    private final String   userId;
+
     private List<MyAssetStatusDTO> myAssetList = new ArrayList<>();
-    private BigDecimal krwBalance = BigDecimal.ZERO;
+    private BigDecimal             krwBalance  = BigDecimal.ZERO;
 
     public Asset_MainPanel(String userId) {
-        this.userId = userId;
+        this.userId   = userId;
         this.assetDAO = new AssetDAO();
-        
-        setLayout(new BorderLayout(0, 10)); 
+
+        setLayout(new BorderLayout(0, 0));
         setBackground(Color.WHITE);
 
         summaryPanel = new Asset_SummaryPanel();
-        chartPanel = new Asset_PortfolioChartPanel();
-        tablePanel = new Assets_TablePanel();
+        tablePanel   = new Assets_TablePanel();
 
-        add(summaryPanel, BorderLayout.NORTH); 
+        add(summaryPanel, BorderLayout.NORTH);
+        add(tablePanel,   BorderLayout.CENTER);
 
-        JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, chartPanel, tablePanel);
-        splitPane.setDividerLocation(400); 
-        splitPane.setResizeWeight(0.4);   
-        splitPane.setBorder(null);        
-        splitPane.setBackground(Color.WHITE);
-        add(splitPane, BorderLayout.CENTER);
-        
-        // [변경 3] 리스너 등록 (나한테도 시세 정보 줘!)
+        // 웹소켓 리스너 등록
         UpbitWebSocketDao.getInstance().addListener(this);
-        
-        // 초기 데이터 로드 (DB에서 가져오기)
+
+        // 초기 DB 데이터 로드
         initAssetData();
     }
-    
-    // 1. 초기 데이터 로드 (DB 접근은 여기서만)
+
+    // ── 초기 데이터 로드 ──────────────────────────────────────────
     public void initAssetData() {
         myAssetList.clear();
+        krwBalance = BigDecimal.ZERO;
+
         List<AssetDTO> dbAssets = assetDAO.getAllAssets(userId);
-        
+
         for (AssetDTO asset : dbAssets) {
             if ("KRW".equalsIgnoreCase(asset.getCurrency())) {
                 krwBalance = asset.getTotalAmount();
                 continue;
             }
-            
+
             MyAssetStatusDTO dto = new MyAssetStatusDTO();
             dto.setCurrency(asset.getCurrency());
-            dto.setBalance(asset.getTotalAmount()); 
-            dto.setAvgPrice(asset.getAvgBuyPrice());
-            // 초기 가격은 평단가로 설정 (이후 웹소켓으로 갱신)
-            dto.setCurrentPrice(asset.getAvgBuyPrice()); 
-            dto.setTotalValue(dto.getBalance().multiply(dto.getCurrentPrice()));
-            
+            dto.setBalance(asset.getTotalAmount());
+            dto.setAvgPrice(asset.getAvgBuyPrice() != null ? asset.getAvgBuyPrice() : BigDecimal.ZERO);
+
+            // 초기 현재가 = 평단가 (웹소켓으로 갱신 전)
+            BigDecimal initPrice = asset.getAvgBuyPrice() != null ? asset.getAvgBuyPrice() : BigDecimal.ZERO;
+            dto.setCurrentPrice(initPrice);
+            dto.setTotalValue(dto.getBalance().multiply(initPrice));
+
             myAssetList.add(dto);
         }
-        
-        // 화면 갱신
-        updateAssetStatus();
+
+        refreshUI();
     }
-    
-    // 2. [오버라이드] 시세가 들어올 때마다 호출되는 메서드
+
+    // ── 웹소켓 콜백 ───────────────────────────────────────────────
     @Override
     public void onTickerUpdate(String symbol, String priceStr, String flucStr, String accPriceStr) {
-        // 내가 가진 코인 중에 시세가 변한게 있는지 확인
-        boolean isRelated = myAssetList.stream()
-                .anyMatch(dto -> dto.getCurrency().equals(symbol));
-        
-        // 관련된 코인이면 화면 갱신 (스윙 스레드에서 안전하게 처리)
-        if (isRelated) {
-            SwingUtilities.invokeLater(() -> {
-            	updateAssetStatus();
-            });
+        boolean related = myAssetList.stream().anyMatch(d -> d.getCurrency().equals(symbol));
+        if (related) {
+            SwingUtilities.invokeLater(this::refreshUI);
         }
     }
 
-    // 3. 화면 갱신 로직 (메모리에 있는 리스트의 가격만 최신화)
-    private void updateAssetStatus() {
-        BigDecimal totalEvaluation = BigDecimal.ZERO; 
-        BigDecimal totalBuy = BigDecimal.ZERO;        
-        
+    // ── UI 전체 갱신 ──────────────────────────────────────────────
+    private void refreshUI() {
+        BigDecimal totalEval = BigDecimal.ZERO;
+        BigDecimal totalBuy  = BigDecimal.ZERO;
+
         for (MyAssetStatusDTO dto : myAssetList) {
-            // 웹소켓 DAO에서 최신 현재가 가져오기
+            // 최신 현재가
             String market = "KRW-" + dto.getCurrency();
-            BigDecimal currentPrice = UpbitWebSocketDao.getCurrentPrice(market); 
-            
-            // 아직 시세가 안 들어왔으면 기존 값(평단가 등) 유지
-            if (currentPrice != null && currentPrice.compareTo(BigDecimal.ZERO) > 0) {
-                dto.setCurrentPrice(currentPrice);
+            BigDecimal cur = UpbitWebSocketDao.getCurrentPrice(market);
+            if (cur != null && cur.compareTo(BigDecimal.ZERO) > 0) {
+                dto.setCurrentPrice(cur);
             }
-            
-            // 평가금액 재계산
-            BigDecimal valuation = dto.getBalance().multiply(dto.getCurrentPrice());
-            dto.setTotalValue(valuation);
-            
-            // 매수금액 계산
-            BigDecimal buyAmt = dto.getBalance().multiply(dto.getAvgPrice());
-            
-            totalEvaluation = totalEvaluation.add(valuation);
-            totalBuy = totalBuy.add(buyAmt);
-            
-            // 수익률 재계산
+
+            BigDecimal eval = dto.getBalance().multiply(dto.getCurrentPrice());
+            BigDecimal buy  = dto.getBalance().multiply(dto.getAvgPrice());
+            dto.setTotalValue(eval);
+
+            // 수익률
             if (dto.getAvgPrice().compareTo(BigDecimal.ZERO) > 0) {
                 BigDecimal diff = dto.getCurrentPrice().subtract(dto.getAvgPrice());
-                double rate = diff.divide(dto.getAvgPrice(), 4, RoundingMode.HALF_UP).doubleValue() * 100;
+                double rate = diff.divide(dto.getAvgPrice(), 6, RoundingMode.HALF_UP).doubleValue() * 100;
                 dto.setProfitRate(rate);
-            } else {
-                dto.setProfitRate(0.0);
             }
-        }
-        
-        // 전체 요약 정보 재계산
-        BigDecimal totalAsset = krwBalance.add(totalEvaluation);
-        BigDecimal totalPnl = totalEvaluation.subtract(totalBuy);
-        
-        double totalYield = 0.0;
-        if (totalBuy.compareTo(BigDecimal.ZERO) > 0) {
-            totalYield = totalPnl.divide(totalBuy, 4, RoundingMode.HALF_UP).doubleValue() * 100;
+
+            totalEval = totalEval.add(eval);
+            totalBuy  = totalBuy.add(buy);
         }
 
-        // 각 패널에 변경된 데이터 전달
-        summaryPanel.updateSummary(totalAsset, totalBuy, totalPnl, totalYield);
-        chartPanel.updateChart(myAssetList, krwBalance);
+        BigDecimal totalAsset = krwBalance.add(totalEval);
+        BigDecimal totalPnl   = totalEval.subtract(totalBuy);
+
+        double totalYield = 0.0;
+        if (totalBuy.compareTo(BigDecimal.ZERO) > 0) {
+            totalYield = totalPnl.divide(totalBuy, 6, RoundingMode.HALF_UP).doubleValue() * 100;
+        }
+
+        // 각 패널 갱신
+        summaryPanel.updateSummary(
+            krwBalance,  // 보유 KRW
+            totalAsset,  // 총 보유자산
+            totalBuy,    // 총 매수
+            totalEval,   // 총 평가
+            krwBalance,  // 주문가능 (= KRW)
+            totalPnl,    // 총평가손익
+            totalYield   // 총평가수익률
+        );
+        summaryPanel.updateChart(myAssetList, krwBalance);
         tablePanel.updateTable(myAssetList);
-        
-        // 화면 다시 그리기 (깜빡임 방지 등)
+
         revalidate();
         repaint();
     }
-    
-    // 테스트용 메인
-    public static void main(String[] args) {
-        javax.swing.JFrame frame = new javax.swing.JFrame("자산 현황 패널 테스트");
-        frame.setDefaultCloseOperation(javax.swing.JFrame.EXIT_ON_CLOSE);
-        frame.setSize(1000, 700);
 
-        // 테스트 유저 ID 입력
-        Asset_MainPanel panel = new Asset_MainPanel("user_01"); 
-        
-        frame.add(panel);
-        frame.setLocationRelativeTo(null);
-        frame.setVisible(true);
-        
-        // 앱 시작 시 웹소켓 시작 (반드시 필요)
-        UpbitWebSocketDao.getInstance().start();
+    // ── 독립 테스트 ───────────────────────────────────────────────
+    public static void main(String[] args) {
+        SwingUtilities.invokeLater(() -> {
+            JFrame frame = new JFrame("보유자산 테스트");
+            frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+            frame.setSize(1100, 700);
+            frame.setLocationRelativeTo(null);
+
+            Asset_MainPanel panel = new Asset_MainPanel("user_01");
+            frame.add(panel);
+            frame.setVisible(true);
+
+            UpbitWebSocketDao.getInstance().start();
+        });
     }
 }
