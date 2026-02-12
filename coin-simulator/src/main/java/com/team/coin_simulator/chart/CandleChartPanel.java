@@ -11,27 +11,29 @@ import org.jfree.data.xy.OHLCDataset;
 
 import javax.swing.*;
 import java.awt.*;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Date;
+import java.util.List;
 
 public class CandleChartPanel extends JFrame {
 
     private JFreeChart chart;
     private XYPlot plot;
+    private CandleDAO candleDAO = new CandleDAO(); // DB 접근용 DAO
 
     public CandleChartPanel(String title) {
         super(title);
 
-        // 1. 초기 데이터셋 생성 (기본 '분' 단위)
-        OHLCDataset dataset = createDataset("1분");
+        // 1. 초기 데이터셋 생성 (기본 4시간 단위)
+        OHLCDataset dataset = createDatasetFromDB("KRW-BTC", 1); // factor 1 = 4시간
 
         // 2. 차트 생성
-        chart = ChartFactory.createCandlestickChart(
-                "", "", "", dataset, false);
+        chart = ChartFactory.createCandlestickChart("", "", "", dataset, false);
 
         plot = (XYPlot) chart.getPlot();
         plot.setRangeAxisLocation(org.jfree.chart.axis.AxisLocation.TOP_OR_RIGHT);
 
-        // 렌더러 설정
         CandlestickRenderer renderer = (CandlestickRenderer) plot.getRenderer();
         renderer.setDrawVolume(false);
         renderer.setUpPaint(Color.RED);
@@ -40,48 +42,49 @@ public class CandleChartPanel extends JFrame {
         NumberAxis yAxis = (NumberAxis) plot.getRangeAxis();
         yAxis.setAutoRangeIncludesZero(false);
 
-        // 3. 차트 패널
         ChartPanel chartPanel = new ChartPanel(chart);
         chartPanel.setPreferredSize(new Dimension(900, 500));
         chartPanel.setMouseWheelEnabled(true);
 
-        // 4. 상단 버튼 패널 추가
-        JPanel buttonPanel = new JPanel();
-        buttonPanel.setLayout(new FlowLayout(FlowLayout.LEFT));
+        // 3. 상단 버튼 패널 (8h, 12h, 24h 추가)
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
         buttonPanel.setBackground(Color.WHITE);
 
-        String[] intervals = {"1분", "5분", "30분", "1시간", "일"};
-        for (String interval : intervals) {
-            JButton button = new JButton(interval);
-            button.addActionListener(e -> updateChart(interval)); // 클릭 이벤트
+        // 버튼명과 압축 배수(Factor) 매핑
+        String[] intervals = {"4시간", "8시간", "12시간", "24시간"};
+        int[] factors = {1, 2, 3, 6}; // 4h * 1, 4h * 2...
+
+        for (int i = 0; i < intervals.length; i++) {
+            String label = intervals[i];
+            int factor = factors[i];
+            JButton button = new JButton(label);
+            button.addActionListener(e -> {
+                plot.setDataset(createDatasetFromDB("KRW-BTC", factor));
+                chart.setTitle("BTC Chart (" + label + ")");
+            });
             buttonPanel.add(button);
         }
 
-        // 전체 레이아웃 구성
         setLayout(new BorderLayout());
-        add(buttonPanel, BorderLayout.NORTH); // 상단에 버튼 배치
-        add(chartPanel, BorderLayout.CENTER); // 중앙에 차트 배치
+        add(buttonPanel, BorderLayout.NORTH);
+        add(chartPanel, BorderLayout.CENTER);
     }
 
     /**
-     * 버튼 클릭 시 차트 데이터를 업데이트하는 메서드
+     * DB에서 4시간 데이터를 가져와 N배수로 묶어서 데이터셋 생성
      */
-    private void updateChart(String interval) {
-        System.out.println(interval + " 데이터로 갱신 중...");
+    private OHLCDataset createDatasetFromDB(String market, int factor) {
+        // 1. DB에서 원본 4시간 데이터(unit 240)를 넉넉히 가져옴
+        List<CandleDTO> originalList = candleDAO.getCandles(market, 240, 200);
         
-        // 새로운 가상 데이터셋 생성
-        OHLCDataset newDataset = createDataset(interval);
-        
-        // 차트의 데이터셋만 교체 (차트가 자동으로 다시 그려짐)
-        plot.setDataset(newDataset);
-        chart.setTitle("Coin Price Test (" + interval + ")");
-    }
+        // 2. 과거 -> 현재 순서로 정렬
+        Collections.reverse(originalList);
 
-    /**
-     * 시간 단위별 가상 데이터 생성 로직
-     */
-    private OHLCDataset createDataset(String interval) {
-        int count = 100;
+        // 3. 사용자가 요청한 배수(factor)만큼 데이터 합성
+        List<CandleDTO> resampledList = resampleCandles(originalList, factor);
+
+        // 4. JFreeChart 형식으로 변환
+        int count = resampledList.size();
         Date[] date = new Date[count];
         double[] high = new double[count];
         double[] low = new double[count];
@@ -89,38 +92,60 @@ public class CandleChartPanel extends JFrame {
         double[] close = new double[count];
         double[] volume = new double[count];
 
-        long now = System.currentTimeMillis();
-        
-        // 시간 단위에 따른 밀리초 계산
-        long timeStep;
-        switch (interval) {
-            case "1분":   timeStep = 60 * 1000L; break;
-            case "5분":   timeStep = 5 * 60 * 1000L; break;
-            case "30분":  timeStep = 30 * 60 * 1000L; break;
-            case "1시간": timeStep = 60 * 60 * 1000L; break;
-            default:      timeStep = 24 * 60 * 60 * 1000L; // 일
-        }
-
-        double lastPrice = 60000.0;
         for (int i = 0; i < count; i++) {
-            // 역순으로 시간을 배치하여 현재가 가장 오른쪽에 오게 함
-            date[i] = new Date(now - (long)(count - i) * timeStep);
-            
-            open[i] = lastPrice;
-            double vol = open[i] * 0.02;
-            high[i] = open[i] + (Math.random() * vol);
-            low[i] = open[i] - (Math.random() * vol);
-            close[i] = low[i] + (Math.random() * (high[i] - low[i]));
-            volume[i] = 100.0;
-            lastPrice = close[i];
+            CandleDTO dto = resampledList.get(i);
+            date[i] = java.sql.Timestamp.valueOf(dto.getCandleDateTimeKst()); //
+            open[i] = dto.getOpeningPrice(); //
+            high[i] = dto.getHighPrice(); //
+            low[i] = dto.getLowPrice(); //
+            close[i] = dto.getTradePrice(); //
+            volume[i] = dto.getCandleAccTradeVolume(); //
         }
 
-        return new DefaultHighLowDataset("BTC/KRW", date, high, low, open, close, volume);
+        return new DefaultHighLowDataset(market, date, high, low, open, close, volume);
+    }
+
+    /**
+     * 봉 합성 로직: 4시간 데이터를 묶어서 상위 봉 생성
+     */
+    public List<CandleDTO> resampleCandles(List<CandleDTO> originalList, int factor) {
+        List<CandleDTO> resampledList = new ArrayList<>();
+        if (originalList.isEmpty()) return resampledList;
+
+        for (int i = 0; i < originalList.size(); i += factor) {
+            int end = Math.min(i + factor, originalList.size());
+            List<CandleDTO> subList = originalList.subList(i, end);
+
+            CandleDTO newCandle = new CandleDTO();
+            CandleDTO first = subList.get(0);
+            CandleDTO last = subList.get(subList.size() - 1);
+
+            newCandle.setMarket(first.getMarket());
+            newCandle.setCandleDateTimeKst(first.getCandleDateTimeKst());
+            newCandle.setOpeningPrice(first.getOpeningPrice()); // 첫 번째 봉의 시가
+            newCandle.setTradePrice(last.getTradePrice());    // 마지막 봉의 종가
+
+            double maxHigh = -1.0;
+            double minLow = Double.MAX_VALUE;
+            double totalVol = 0;
+
+            for (CandleDTO dto : subList) {
+                if (dto.getHighPrice() > maxHigh) maxHigh = dto.getHighPrice();
+                if (dto.getLowPrice() < minLow) minLow = dto.getLowPrice();
+                totalVol += dto.getCandleAccTradeVolume();
+            }
+
+            newCandle.setHighPrice(maxHigh);
+            newCandle.setLowPrice(minLow);
+            newCandle.setCandleAccTradeVolume(totalVol);
+            resampledList.add(newCandle);
+        }
+        return resampledList;
     }
 
     public static void main(String[] args) {
         SwingUtilities.invokeLater(() -> {
-            CandleChartPanel frame = new CandleChartPanel("주기별 코인 차트 테스트");
+            CandleChartPanel frame = new CandleChartPanel("주기별 봉 합성 테스트");
             frame.pack();
             frame.setLocationRelativeTo(null);
             frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
