@@ -1,21 +1,22 @@
 package Investment_details.profitloss;
 
+import DTO.ExecutionDTO;
 import javax.swing.*;
 import javax.swing.border.MatteBorder;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.table.JTableHeader;
 import java.awt.*;
+import java.math.BigDecimal;
 import java.text.SimpleDateFormat;
+import java.util.*;
 import java.util.List;
 
 /**
- * 투자손익 하단 상세 테이블 패널
- * 수정됨: 입금, 출금 컬럼 제거
+ * 투자손익 하단 상세 테이블 패널 (ExecutionDTO 사용)
  */
 public class ProfitLoss_DetailTablePanel extends JPanel {
 
-    // [수정 1] COLUMNS 배열에서 "입금", "출금" 제거
     private static final String[] COLUMNS = {
             "일자", "일일 손익", "일일 수익률", "누적 손익", "누적 수익률",
             "기초 자산", "기말 자산"
@@ -23,6 +24,7 @@ public class ProfitLoss_DetailTablePanel extends JPanel {
 
     private final DefaultTableModel tableModel;
     private final JTable table;
+    private ProfitLossDAO dao;
 
     private static final Color COLOR_PROFIT = new Color(220, 60, 60);
     private static final Color COLOR_LOSS   = new Color(70, 100, 220);
@@ -33,6 +35,8 @@ public class ProfitLoss_DetailTablePanel extends JPanel {
     public ProfitLoss_DetailTablePanel() {
         setLayout(new BorderLayout());
         setBackground(Color.WHITE);
+        
+        dao = new ProfitLossDAO();
 
         JLabel titleLabel = new JLabel("투자손익 상세");
         titleLabel.setFont(new Font("맑은 고딕", Font.BOLD, 13));
@@ -82,27 +86,21 @@ public class ProfitLoss_DetailTablePanel extends JPanel {
     }
 
     private void styleColumns() {
-        // 일자 - 중앙
         table.getColumnModel().getColumn(0).setCellRenderer(buildCenterRenderer());
         
-        // 일일/누적 손익/수익률 (인덱스 1~4)
         table.getColumnModel().getColumn(1).setCellRenderer(buildColorRenderer(true));
         table.getColumnModel().getColumn(3).setCellRenderer(buildColorRenderer(true));
         table.getColumnModel().getColumn(2).setCellRenderer(buildColorRenderer(false));
         table.getColumnModel().getColumn(4).setCellRenderer(buildColorRenderer(false));
 
-        // [수정 2] 기초자산(5), 기말자산(6)만 우측 정렬 (입출금 인덱스 7,8 제거됨)
         DefaultTableCellRenderer rightRenderer = buildRightRenderer();
         for (int i = 5; i <= 6; i++) {
             table.getColumnModel().getColumn(i).setCellRenderer(rightRenderer);
         }
 
-        // [수정 3] 컬럼 너비 배열 수정 (마지막 70, 70 제거 및 전체 비율 조정)
-        // 기존 너비 합이 대략 테이블 꽉 채우게 조정
         int[] widths = {60, 100, 90, 100, 90, 110, 110}; 
-        
         for (int i = 0; i < widths.length; i++) {
-            if (i < table.getColumnCount()) { // 안전장치
+            if (i < table.getColumnCount()) {
                 table.getColumnModel().getColumn(i).setPreferredWidth(widths[i]);
             }
         }
@@ -149,38 +147,75 @@ public class ProfitLoss_DetailTablePanel extends JPanel {
         };
     }
 
-    public void updateTable(List<ExecutionDTO> entries) {
+    /**
+     * ExecutionDTO 리스트로 테이블 업데이트
+     */
+    public void updateTable(List<ExecutionDTO> executions, String userId) {
         tableModel.setRowCount(0);
-        if (entries == null) return;
+        if (executions == null || executions.isEmpty()) return;
 
-        for (ExecutionDTO e : entries) {
-            String dateStr = sdf.format(e.getDate());
+        // 초기 자본금 조회
+        long initialSeedMoney = dao.getInitialSeedMoney(userId);
 
-            // 일일 손익
-            long dp = e.getDailyPnl();
-            String dpStr = (dp >= 0 ? "+" : "") + String.format("%,d", dp);
+        // 날짜별로 그룹화
+        Map<Date, BigDecimal> dailyPnlMap = new TreeMap<>(Collections.reverseOrder());
+        
+        for (ExecutionDTO exec : executions) {
+            if (!"ASK".equals(exec.getSide())) continue;
+            if (exec.getRealizedPnl() == null) continue;
+            
+            Date date = new Date(exec.getExecutedAt().getTime());
+            Calendar cal = Calendar.getInstance();
+            cal.setTime(date);
+            cal.set(Calendar.HOUR_OF_DAY, 0);
+            cal.set(Calendar.MINUTE, 0);
+            cal.set(Calendar.SECOND, 0);
+            cal.set(Calendar.MILLISECOND, 0);
+            Date dateOnly = cal.getTime();
+            
+            dailyPnlMap.merge(dateOnly, exec.getRealizedPnl(), BigDecimal::add);
+        }
+
+        // 테이블 행 생성
+        BigDecimal cumulativePnl = BigDecimal.ZERO;
+        long currentAsset = initialSeedMoney;
+
+        for (Map.Entry<Date, BigDecimal> entry : dailyPnlMap.entrySet()) {
+            String dateStr = sdf.format(entry.getKey());
+            BigDecimal dailyPnl = entry.getValue();
+            
+            long baseAsset = currentAsset; // 기초자산
+            cumulativePnl = cumulativePnl.add(dailyPnl);
+            currentAsset = initialSeedMoney + cumulativePnl.longValue(); // 기말자산
 
             // 일일 수익률
-            double dy = e.getDailyYield();
-            String dyStr = (dy >= 0 ? "+" : "") + String.format("%.2f%%", dy);
-
-            // 누적 손익
-            long cp = e.getCumulativePnl();
-            String cpStr = (cp >= 0 ? "+" : "") + String.format("%,d", cp);
+            double dailyYield = baseAsset > 0 
+                ? (dailyPnl.doubleValue() / baseAsset) * 100 
+                : 0.0;
 
             // 누적 수익률
-            double cy = e.getCumulativeYield();
-            String cyStr = (cy >= 0 ? "+" : "") + String.format("%.2f%%", cy);
+            double cumulativeYield = initialSeedMoney > 0
+                ? (cumulativePnl.doubleValue() / initialSeedMoney) * 100
+                : 0.0;
 
-            // [수정 4] addRow에서 입금, 출금 데이터 제외 (총 7개 컬럼)
+            // 포맷팅
+            String dpStr = (dailyPnl.longValue() >= 0 ? "+" : "") + 
+                          String.format("%,d", dailyPnl.longValue());
+            String dyStr = (dailyYield >= 0 ? "+" : "") + 
+                          String.format("%.2f%%", dailyYield);
+            String cpStr = (cumulativePnl.longValue() >= 0 ? "+" : "") + 
+                          String.format("%,d", cumulativePnl.longValue());
+            String cyStr = (cumulativeYield >= 0 ? "+" : "") + 
+                          String.format("%.2f%%", cumulativeYield);
+
             tableModel.addRow(new Object[]{
                     dateStr,
                     dpStr,
                     dyStr,
                     cpStr,
                     cyStr,
-                    String.format("%,d", e.getBaseAsset()),
-                    String.format("%,d", e.getFinalAsset())
+                    String.format("%,d", baseAsset),
+                    String.format("%,d", currentAsset)
             });
         }
     }
