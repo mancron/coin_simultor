@@ -135,4 +135,5 @@ public class OrderBookPanel extends JPanel {
         String priceStr = String.format("%,.0f (%.2f%%)", price, changeRate);
         model.addRow(new Object[]{priceStr, String.format("%.4f", volume)});
     }
+    
 }

@@ -5,7 +5,7 @@ import java.awt.*;
 import com.team.coin_simulator.Market_Panel.HistoryPanel;
 import com.team.coin_simulator.Market_Order.OrderPanel;
 import com.team.coin_simulator.chart.CandleChartPanel;
-import com.team.coin_simulator.orderbook.OrderBookFrame;
+import com.team.coin_simulator.orderbook.OrderBookPanel;
 import DAO.UpbitWebSocketDao;
 
 /**
@@ -28,8 +28,8 @@ public class MainFrame extends JFrame implements TimeController.TimeChangeListen
     
     private TimeControlPanel timeControlPanel;
     private HistoryPanel historyPanel;
-    private CandleChartPanel chartPanel; // JPanel로 변경됨
-    private OrderBookFrame orderBookFrame; // 독립 창으로 관리
+    private CandleChartPanel chartPanel;
+    private OrderBookPanel orderBookPanel; // 패널로 변경
     private OrderPanel orderPanel;
     
     private TimeController timeController;
@@ -68,21 +68,22 @@ public class MainFrame extends JFrame implements TimeController.TimeChangeListen
         historyPanel.setPreferredSize(new Dimension(350, 0));
         
         // 코인 선택 이벤트 리스너 추가
-        // HistoryPanel에서 코인이 선택되면 차트 업데이트
-        // (HistoryPanel에 리스너 메커니즘 추가 필요)
+        historyPanel.addCoinSelectionListener(this::onCoinSelected);
         
         // 2-2. 중앙: 차트 + 호가창 영역
         JPanel centerArea = new JPanel(new BorderLayout());
         
-        // 차트 패널 (상단 - JPanel로 변경됨)
+        // 차트 패널 (상단)
         chartPanel = new CandleChartPanel("BTC 차트");
         chartPanel.setPreferredSize(new Dimension(0, 500));
         
-        // 호가창 플레이스홀더 (하단)
-        JPanel orderBookPlaceholder = createOrderBookPlaceholder();
+        // 호가창 패널 (하단) - 기본 BTC로 시작
+        orderBookPanel = new OrderBookPanel("BTC");
+        orderBookPanel.setPreferredSize(new Dimension(0, 350));
+        orderBookPanel.setBorder(BorderFactory.createTitledBorder("호가창"));
         
         centerArea.add(chartPanel, BorderLayout.CENTER);
-        centerArea.add(orderBookPlaceholder, BorderLayout.SOUTH);
+        centerArea.add(orderBookPanel, BorderLayout.SOUTH);
         
         // 2-3. 오른쪽: 주문 패널 (350px 고정)
         orderPanel = new OrderPanel();
@@ -97,32 +98,49 @@ public class MainFrame extends JFrame implements TimeController.TimeChangeListen
     }
     
     /**
-     * 호가창 플레이스홀더 생성
+     * 코인 선택 이벤트 핸들러
      */
-    private JPanel createOrderBookPlaceholder() {
-        JPanel panel = new JPanel(new BorderLayout());
-        panel.setPreferredSize(new Dimension(0, 350));
-        panel.setBackground(new Color(250, 250, 250));
-        panel.setBorder(BorderFactory.createTitledBorder("호가창"));
+    private void onCoinSelected(String coinSymbol) {
+        if (coinSymbol == null || coinSymbol.isEmpty()) {
+            return;
+        }
         
-        JButton btnShowOrderBook = new JButton("호가창 열기 (새 창)");
-        btnShowOrderBook.setPreferredSize(new Dimension(200, 40));
-        btnShowOrderBook.addActionListener(e -> {
-            String selectedCoin = historyPanel.getSelectedCoin();
-            if (selectedCoin != null) {
-                showOrderBook(selectedCoin);
-            } else {
-                JOptionPane.showMessageDialog(this, "코인을 먼저 선택해주세요.");
-            }
-        });
+        System.out.println("[MainFrame] 코인 선택됨: " + coinSymbol);
         
-        JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
-        btnPanel.setBackground(new Color(250, 250, 250));
-        btnPanel.add(btnShowOrderBook);
+        // 차트 업데이트
+        chartPanel.changeMarket(coinSymbol);
         
-        panel.add(btnPanel, BorderLayout.CENTER);
+        // 기존 호가창 패널 제거 및 새 호가창 생성
+        updateOrderBookPanel(coinSymbol);
+    }
+    
+    /**
+     * 호가창 패널 업데이트
+     */
+    private void updateOrderBookPanel(String coinSymbol) {
+        // 기존 호가창의 웹소켓 연결 종료
+        if (orderBookPanel != null) {
+            orderBookPanel.closeConnection();
+        }
         
-        return panel;
+        // 새 호가창 패널 생성
+        orderBookPanel = new OrderBookPanel(coinSymbol);
+        orderBookPanel.setPreferredSize(new Dimension(0, 350));
+        orderBookPanel.setBorder(BorderFactory.createTitledBorder(
+            coinSymbol + " 호가창"
+        ));
+        
+        // 레이아웃 업데이트
+        Container parent = getContentPane();
+        JPanel mainPanel = (JPanel) parent.getComponent(1); // BorderLayout.CENTER
+        JPanel centerArea = (JPanel) mainPanel.getComponent(1); // 중앙 영역
+        
+        // 기존 호가창 제거하고 새 호가창 추가
+        centerArea.remove(1); // SOUTH 위치 제거
+        centerArea.add(orderBookPanel, BorderLayout.SOUTH);
+        
+        centerArea.revalidate();
+        centerArea.repaint();
     }
     
     /**
@@ -133,17 +151,6 @@ public class MainFrame extends JFrame implements TimeController.TimeChangeListen
         if (timeController.isRealtimeMode()) {
             UpbitWebSocketDao.getInstance().start();
         }
-    }
-    
-    /**
-     * 호가창 표시 (별도 창)
-     */
-    private void showOrderBook(String coinSymbol) {
-        if (orderBookFrame != null) {
-            orderBookFrame.dispose();
-        }
-        orderBookFrame = new OrderBookFrame(coinSymbol);
-        orderBookFrame.setVisible(true);
     }
     
     /**
@@ -198,6 +205,11 @@ public class MainFrame extends JFrame implements TimeController.TimeChangeListen
     public void dispose() {
         // 웹소켓 연결 종료
         UpbitWebSocketDao.getInstance().close();
+        
+        // 호가창 연결 종료
+        if (orderBookPanel != null) {
+            orderBookPanel.closeConnection();
+        }
         
         // DB 커넥션 풀 종료
         DBConnection.close();
