@@ -1,4 +1,4 @@
-package com.team.coin_simulator.user;
+package DAO;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
