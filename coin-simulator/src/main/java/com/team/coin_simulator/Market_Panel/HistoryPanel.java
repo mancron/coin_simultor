@@ -60,6 +60,31 @@ public class HistoryPanel extends JPanel implements UpbitWebSocketDao.TickerList
     private HashMap<String, List<CoinRowPanel>> coinMap = new HashMap<>();
     private List<TabButton> tabButtons = new ArrayList<>();
 
+    // [추가] 코인 선택 리스너 목록
+    private List<CoinSelectionListener> coinSelectionListeners = new ArrayList<>();
+    
+    /**
+     * 코인 선택 리스너 인터페이스
+     */
+    public interface CoinSelectionListener {
+        void onCoinSelected(String coinSymbol);
+    }
+    
+    /**
+     * 코인 선택 리스너 추가
+     */
+    public void addCoinSelectionListener(CoinSelectionListener listener) {
+        coinSelectionListeners.add(listener);
+    }
+    
+    /**
+     * 코인 선택 이벤트 발생
+     */
+    private void fireCoinSelectionEvent(String coinSymbol) {
+        for (CoinSelectionListener listener : coinSelectionListeners) {
+            listener.onCoinSelected(coinSymbol);
+        }
+    }
     
     public HistoryPanel() {
         setLayout(new BorderLayout());
@@ -200,13 +225,12 @@ public class HistoryPanel extends JPanel implements UpbitWebSocketDao.TickerList
     }
     
     private void selectCoin(String symbol, CoinRowPanel clickedPanel) {
-        this.selectedCoinSymbol = symbol;
-        System.out.println("선택된 코인: " + symbol); 
-        
+        // 이전 선택 해제
         if (selectedRowPanel != null) {
             selectedRowPanel.setBackground(DEFAULT_COLOR);
         }
 
+        // 새 선택 설정
         this.selectedCoinSymbol = symbol;
         this.selectedRowPanel = clickedPanel;
         
@@ -214,6 +238,11 @@ public class HistoryPanel extends JPanel implements UpbitWebSocketDao.TickerList
             selectedRowPanel.setBackground(SELECTED_COLOR);
             selectedRowPanel.setOpaque(true); 
         }
+
+        // [추가] 코인 선택 이벤트 발생
+        fireCoinSelectionEvent(symbol);
+        
+        System.out.println("선택된 코인: " + symbol); 
 
         revalidate();
         repaint();
@@ -308,7 +337,7 @@ public class HistoryPanel extends JPanel implements UpbitWebSocketDao.TickerList
         row.addMouseListener(new java.awt.event.MouseAdapter() {
             @Override
             public void mouseClicked(java.awt.event.MouseEvent e) {
-            	selectCoin(code,row); 
+            	selectCoin(code, row); 
             }
         });
         
