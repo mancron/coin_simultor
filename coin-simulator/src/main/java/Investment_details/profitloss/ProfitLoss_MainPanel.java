@@ -4,6 +4,9 @@ import DTO.ExecutionDTO;
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.border.MatteBorder;
+
+import DAO.ProfitLossDAO;
+
 import java.awt.*;
 import java.util.List;
 

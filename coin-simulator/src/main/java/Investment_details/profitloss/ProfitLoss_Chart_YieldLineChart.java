@@ -12,6 +12,8 @@ import org.jfree.data.time.Day;
 import org.jfree.data.time.TimeSeries;
 import org.jfree.data.time.TimeSeriesCollection;
 
+import DAO.ProfitLossDAO;
+
 import javax.swing.*;
 import java.awt.*;
 import java.math.BigDecimal;

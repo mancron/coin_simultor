@@ -6,6 +6,9 @@ import javax.swing.border.MatteBorder;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.table.JTableHeader;
+
+import DAO.ProfitLossDAO;
+
 import java.awt.*;
 import java.math.BigDecimal;
 import java.text.SimpleDateFormat;
