@@ -1,8 +1,9 @@
 package DTO;
 
 import java.math.BigDecimal;
+import java.sql.Timestamp;
 
-import com.google.protobuf.Timestamp;
+
 
 public class OrderDTO {
 
@@ -22,6 +23,7 @@ public class OrderDTO {
     // 4. 가격/수량 (돈 계산은 무조건 BigDecimal)
     private BigDecimal originalPrice;
     private BigDecimal originalVolume;
+    
     public Long getOrderId() {
 		return orderId;
 	}
@@ -119,5 +121,5 @@ public class OrderDTO {
     // 기본 생성자
     public OrderDTO() {}
 
-    // Getter, Setter 생략 (Lombok @Data 쓰면 편함)
+   
 }
