@@ -203,7 +203,7 @@ public class OrderPanel extends JPanel implements UpbitWebSocketDao.TickerListen
         // 초기 잔고 표시
         updateInfoLabel();
         
-        // [추가] 실시간 웹소켓 가격 수신을 위해 자신을 리스너로 등록!
+        //실시간 웹소켓 가격 수신을 위해 자신을 리스너로 등록!
         UpbitWebSocketDao.getInstance().addListener(this);
     }
 
@@ -245,7 +245,7 @@ public class OrderPanel extends JPanel implements UpbitWebSocketDao.TickerListen
         updateInfoLabel(); 
     }
 
-    // [핵심] WebSocket에서 호출: 실시간 가격이 들어올 때 (인터페이스 구현)
+    //WebSocket에서 호출: 실시간 가격이 들어올 때 (인터페이스 구현)
     @Override
     public void onTickerUpdate(String symbol, String priceStr, String flucStr, String accPriceStr) {
         String cleanPrice = priceStr.replace(",", "").replace(" KRW", "").trim();
@@ -253,7 +253,7 @@ public class OrderPanel extends JPanel implements UpbitWebSocketDao.TickerListen
 
 BigDecimal priceBD = new BigDecimal(cleanPrice);
         
-        // [핵심 1] 화면 갱신과 상관없이, 일단 들어오는 모든 코인 가격을 메모장에 갱신!
+        //화면 갱신과 상관없이, 일단 들어오는 모든 코인 가격을 갱신
         latestPrices.put(symbol, priceBD);
 
         // 지금 보고 있는 코인이 아니면 화면 업데이트 로직은 무시
@@ -306,7 +306,6 @@ BigDecimal priceBD = new BigDecimal(cleanPrice);
         }
     }
 
-    // [수정] 중괄호 어긋남 완전 해결
     private void updateMarketCalculation() {
         try {
             String amtStr = marketAmountField.getText().replace(",", "").trim();
@@ -356,9 +355,7 @@ BigDecimal priceBD = new BigDecimal(cleanPrice);
         updateInfoLabel();
     }
 
-    // ==========================================================
     // 주문(매수/매도/정정/취소) 실행 로직
-    // ==========================================================
 
     private void handleOrderAction() {
         if (isLimitMode) {
@@ -368,7 +365,7 @@ BigDecimal priceBD = new BigDecimal(cleanPrice);
         }
     }
 
-    // [수정] try-catch 중괄호 어긋남 및 로직 버그 해결
+    //try-catch 중괄호 어긋남 및 로직 버그 해결
     private void handleLimitOrder() {
         try {
             String pStr = priceField.getText().replace(",", "").trim();
@@ -429,7 +426,8 @@ BigDecimal priceBD = new BigDecimal(cleanPrice);
             if (text.isEmpty()) throw new RuntimeException("주문 내용을 입력해주세요.");
             BigDecimal inputVal = new BigDecimal(text);
 
-            if (sideIdx == 0) { // 시장가 매수
+            //시장가 매수 (BID)
+            if (sideIdx == 0) { 
                 BigDecimal krwBal = mockBalance.getOrDefault("KRW", BigDecimal.ZERO);
                 if (krwBal.compareTo(inputVal) < 0) throw new RuntimeException("KRW 잔고가 부족합니다.");
                 
@@ -449,13 +447,19 @@ BigDecimal priceBD = new BigDecimal(cleanPrice);
                     BigDecimal coinBal = mockBalance.getOrDefault(selectedCoinCode, BigDecimal.ZERO);
                     mockBalance.put(selectedCoinCode, coinBal.add(buyQty));
                     
-                    JOptionPane.showMessageDialog(this, 
-                        String.format("[시장가 매수 체결]\n코인: %s\n체결가: %,.0f\n매수량: %.8f", 
-                        selectedCoinCode, currentSelectedPrice, buyQty));
+                    //토스트 알림 띄우기
+                    String msg = String.format("[체결] %s 시장가 매수 완료 (%.8f개)", selectedCoinCode, buyQty);
+                    
+                    // 부모 프레임(MainFrame)을 찾아서 알림 전달
+                    JFrame parentFrame = (JFrame) SwingUtilities.getWindowAncestor(this);
+                    com.team.coin_simulator.Alerts.NotificationUtil.showToast(parentFrame, msg);
+                    
                 } else {
                     throw new RuntimeException("DB 저장 실패");
                 }
-            } else { // 시장가 매도
+            } 
+            //시장가 매도 (ASK)
+            else { 
                 BigDecimal coinBal = mockBalance.getOrDefault(selectedCoinCode, BigDecimal.ZERO);
                 if (coinBal.compareTo(inputVal) < 0) throw new RuntimeException(selectedCoinCode + " 잔고가 부족합니다.");
 
@@ -475,9 +479,12 @@ BigDecimal priceBD = new BigDecimal(cleanPrice);
                     BigDecimal krwBal = mockBalance.getOrDefault("KRW", BigDecimal.ZERO);
                     mockBalance.put("KRW", krwBal.add(sellTotalKRW));
 
-                    JOptionPane.showMessageDialog(this, 
-                        String.format("[시장가 매도 체결]\n코인: %s\n체결가: %,.0f\n수령액: %,.0f KRW", 
-                        selectedCoinCode, currentSelectedPrice, sellTotalKRW));
+                    //토스트 알림 띄우기
+
+                    // 부모 프레임(MainFrame)을 찾아서 알림 전달
+                    JFrame parentFrame = (JFrame) SwingUtilities.getWindowAncestor(this);
+                    com.team.coin_simulator.Alerts.NotificationUtil.showToast(parentFrame, msg);
+
                 } else {
                     throw new RuntimeException("DB 저장 실패");
                 }
@@ -487,11 +494,11 @@ BigDecimal priceBD = new BigDecimal(cleanPrice);
             marketAmountField.setText(""); 
 
         } catch (Exception e) {
+            // 에러 메시지는 중요한 경고이므로 기존 팝업 유지
             JOptionPane.showMessageDialog(this, "주문 실패: " + e.getMessage(), "에러", JOptionPane.ERROR_MESSAGE);
         }
     }
 
-    // [수정] 괄호 오류 완전 해결
     private void cancelOrder(OrderDTO order) {
         String curr = order.getSide().equals("BID") ? "KRW" : selectedCoinCode;
         BigDecimal lockedAmt = order.getSide().equals("BID") ? order.getOriginalPrice().multiply(order.getOriginalVolume()) : order.getOriginalVolume();

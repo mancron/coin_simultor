@@ -3,6 +3,7 @@ package com.team.coin_simulator;
 import javax.swing.*;
 import java.awt.*;
 import com.team.coin_simulator.Market_Panel.HistoryPanel;
+import com.team.coin_simulator.Alerts.PriceAlertService;
 import com.team.coin_simulator.Market_Order.OrderPanel;
 import com.team.coin_simulator.chart.CandleChartPanel;
 import com.team.coin_simulator.orderbook.OrderBookPanel;
@@ -48,6 +49,9 @@ public class MainFrame extends JFrame implements TimeController.TimeChangeListen
     private static final String CARD_TRADING = "TRADING";
     private static final String CARD_INVESTMENT = "INVESTMENT";
     
+    //알림 감시자
+    private PriceAlertService alertService;
+    
     public MainFrame() {
         super("가상화폐 모의투자 시스템");
         
@@ -61,6 +65,9 @@ public class MainFrame extends JFrame implements TimeController.TimeChangeListen
         
         initComponents();
         initWebSocket();
+        
+        // 알림 서비스 (프레임 정보를 넘겨줌)
+        alertService = new PriceAlertService(this);
         
         setVisible(true);
     }
