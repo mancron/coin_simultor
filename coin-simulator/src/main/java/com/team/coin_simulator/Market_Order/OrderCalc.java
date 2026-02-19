@@ -58,4 +58,16 @@ public class OrderCalc {
         if (price == null || qty == null) return BigDecimal.ZERO;
         return price.multiply(qty).setScale(SCALE_KRW, RoundingMode.DOWN);
     }
+ // [시장가 매수] 입력한 총액(KRW)으로 살 수 있는 코인 수량 계산 (수수료 반영)
+    public static BigDecimal calculateMarketBuyQuantity(BigDecimal totalAmountKRW, BigDecimal currentPrice) {
+        if (totalAmountKRW == null || currentPrice == null || currentPrice.compareTo(BigDecimal.ZERO) <= 0) {
+            return BigDecimal.ZERO;
+        }
+        
+        // 1 코인당 실제 구매 비용 = 현재가 + 수수료(현재가 * 0.0005)
+        BigDecimal costPerUnit = currentPrice.multiply(BigDecimal.ONE.add(FEE_RATE));
+        
+        // 살 수 있는 수량 = 내가 낸 돈 / 1 코인당 구매 비용 (소수점 8자리 내림)
+        return totalAmountKRW.divide(costPerUnit, SCALE_BTC, RoundingMode.DOWN);
+    }
 }
