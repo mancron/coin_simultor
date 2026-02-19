@@ -32,6 +32,8 @@ public class OrderPanel extends JPanel implements UpbitWebSocketDao.TickerListen
     private BigDecimal currentSelectedPrice = BigDecimal.ZERO; // HistoryPanel에서 받은 현재가 저장
     private int sideIdx = 0;
     private boolean isLimitMode = true;
+    //코인 최신 가격 기록
+    private Map<String, BigDecimal> latestPrices = new java.util.concurrent.ConcurrentHashMap<>();
 
     private final Color COLOR_BID = new Color(200, 30, 30);
     private final Color COLOR_ASK = new Color(30, 70, 200);
@@ -209,20 +211,34 @@ public class OrderPanel extends JPanel implements UpbitWebSocketDao.TickerListen
     // 통신 및 실시간 업데이트 로직 (MainFrame, WebSocket 연동)
     // ==========================================================
     
-    // [핵심] MainFrame에서 호출: 사용자가 HistoryPanel에서 다른 코인을 클릭했을 때
+    // MainFrame에서 호출: 사용자가 HistoryPanel에서 다른 코인을 클릭했을 때
     public void setSelectedCoin(String coinSymbol) {
         this.selectedCoinCode = coinSymbol;
         
         // 코인의 한글 이름 가져오기
         String krName = CoinConfig.COIN_INFO.getOrDefault(coinSymbol, coinSymbol);
         
-        if (lblSelectedCoinInfo != null) {
-            lblSelectedCoinInfo.setText(krName + " (" + coinSymbol + ")");
+        BigDecimal cachedPrice = latestPrices.get(coinSymbol);
+        if (cachedPrice != null) {
+            this.currentSelectedPrice = cachedPrice;
+            
+            // 상단 라벨 즉시 변경
+            if (lblSelectedCoinInfo != null) {
+                lblSelectedCoinInfo.setText(krName + " - 현재가 " + String.format("%,.0f", cachedPrice) + " KRW");
+            }
+            
+            // 지정가 모드라면 가격 입력창에 즉시 숫자 꽂아넣기
+            if (isLimitMode && priceField != null) {
+                priceField.setText(cachedPrice.toPlainString()); // 깔끔한 숫자로 세팅
+            }
+            updateOrderSummary(); // 총액도 즉시 계산
+            
+        } else {
+            // 아직 한 번도 가격을 못 받았다면 일단 이름만 (금방 들어옵니다)
+            if (lblSelectedCoinInfo != null) {
+                lblSelectedCoinInfo.setText(krName + " (" + coinSymbol + ")");
+            }
         }
-
-        // 입력창 초기화
-        if (marketAmountField != null) marketAmountField.setText("");
-        if (priceField != null) priceField.setText("");
         
         // 코인이 바뀌었으니 잔고 표시 갱신 (BTC 잔고 -> XRP 잔고 등)
         switchSide(sideIdx, null, null, null); 
@@ -232,36 +248,36 @@ public class OrderPanel extends JPanel implements UpbitWebSocketDao.TickerListen
     // [핵심] WebSocket에서 호출: 실시간 가격이 들어올 때 (인터페이스 구현)
     @Override
     public void onTickerUpdate(String symbol, String priceStr, String flucStr, String accPriceStr) {
-        // 지금 보고 있는 코인이 아니면 무시
-        if (!this.selectedCoinCode.equals(symbol)) return;
-
         String cleanPrice = priceStr.replace(",", "").replace(" KRW", "").trim();
         if (cleanPrice.isEmpty() || cleanPrice.equals("연결중...")) return;
 
-        this.currentSelectedPrice = new BigDecimal(cleanPrice);
+BigDecimal priceBD = new BigDecimal(cleanPrice);
+        
+        // [핵심 1] 화면 갱신과 상관없이, 일단 들어오는 모든 코인 가격을 메모장에 갱신!
+        latestPrices.put(symbol, priceBD);
 
-        // 상단 라벨에 현재가 반영
-        String krName = CoinConfig.COIN_INFO.getOrDefault(symbol, symbol);
+        // 지금 보고 있는 코인이 아니면 화면 업데이트 로직은 무시
+        if (!this.selectedCoinCode.equals(symbol)) return;
+
+        this.currentSelectedPrice = priceBD;
+        String krName = com.team.coin_simulator.CoinConfig.COIN_INFO.getOrDefault(symbol, symbol);
+        
         SwingUtilities.invokeLater(() -> {
             lblSelectedCoinInfo.setText(krName + " - 현재가 " + String.format("%,.0f", currentSelectedPrice) + " KRW");
             
-            // 지정가 모드이고 사용자가 입력 중이 아닐 때만 현재가 자동 채우기
-            if (isLimitMode && !priceField.hasFocus()) {
+            // 지정가 모드이고 입력창이 비어있을 때만
+            if (isLimitMode && priceField.getText().isEmpty()) {
                 priceField.setText(cleanPrice);
                 updateOrderSummary();
             }
 
-            // 시장가 모드라면 예상 수량/금액 실시간 재계산
             if (!isLimitMode) {
                 updateMarketCalculation();
             }
         });
     }
 
-    // ==========================================================
     // 화면 및 계산 로직
-    // ==========================================================
-
     private void updateInfoLabel() {
         String assetCode = (sideIdx == 0) ? "KRW" : selectedCoinCode; 
         BigDecimal balance = mockBalance.getOrDefault(assetCode, BigDecimal.ZERO);
@@ -396,7 +412,7 @@ public class OrderPanel extends JPanel implements UpbitWebSocketDao.TickerListen
             refreshEditList();
             updateInfoLabel();
             
-            JOptionPane.showMessageDialog(this, "지정가 주문 접수 및 DB 저장 완료!");
+            JOptionPane.showMessageDialog(this, "지정가 주문 접수 완료");
 
         } catch (Exception e) {
             JOptionPane.showMessageDialog(this, "주문 오류: " + e.getMessage(), "알림", JOptionPane.ERROR_MESSAGE);
@@ -488,7 +504,7 @@ public class OrderPanel extends JPanel implements UpbitWebSocketDao.TickerListen
             openOrders.remove(order);
             refreshEditList();
             updateInfoLabel();
-            JOptionPane.showMessageDialog(this, "주문이 취소되었습니다. (DB 반영 완료)");
+            JOptionPane.showMessageDialog(this, "주문이 취소되었습니다.");
         } else {
             JOptionPane.showMessageDialog(this, "DB 취소 처리에 실패했습니다.", "오류", JOptionPane.ERROR_MESSAGE);
         }
