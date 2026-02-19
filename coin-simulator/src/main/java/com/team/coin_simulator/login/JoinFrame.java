@@ -3,10 +3,12 @@ package com.team.coin_simulator.login;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.math.BigDecimal;
 import javax.swing.*;
 import javax.swing.border.LineBorder;
 import javax.swing.border.TitledBorder;
 
+import DAO.AssetDAO;
 import DAO.UserDAO;
 import DTO.UserDTO;
 
@@ -67,6 +69,11 @@ public class JoinFrame extends JFrame {
                 field = new JTextField();
             }
             
+            // 초기 투자 금액 필드에 기본값 설정
+            if (i == 4) {
+                field.setText("100000000"); // 기본 1억원
+            }
+            
             styleField(field, labels[i]);
             fields[i] = field;
             card.add(field);
@@ -93,15 +100,43 @@ public class JoinFrame extends JFrame {
                 String pw = new String(((JPasswordField)fields[1]).getPassword());
                 String pwConfirm = new String(((JPasswordField)fields[2]).getPassword());
                 String phone = fields[3].getText().trim();
-                String initialAsset = fields[4].getText().trim();
+                String initialAssetStr = fields[4].getText().trim();
 
                 // 1. 모든 필드 입력 여부 확인
-                if (email.isEmpty() || pw.isEmpty() || pwConfirm.isEmpty() || phone.isEmpty() || initialAsset.isEmpty()) {
+                if (email.isEmpty() || pw.isEmpty() || pwConfirm.isEmpty() || phone.isEmpty() || initialAssetStr.isEmpty()) {
                     JOptionPane.showMessageDialog(JoinFrame.this, "모든 정보를 빠짐없이 입력해주세요.", "입력 오류", JOptionPane.WARNING_MESSAGE);
                     return;
                 }
 
-                // 2. 비밀번호 유효성 검사 (영문+숫자+특수문자 조합)
+                // 2. 초기 투자금액 유효성 검사
+                BigDecimal initialAsset;
+                try {
+                    initialAsset = new BigDecimal(initialAssetStr.replaceAll(",", ""));
+                    
+                    // 최소 금액 체크 (예: 1만원 이상)
+                    if (initialAsset.compareTo(new BigDecimal("10000")) < 0) {
+                        JOptionPane.showMessageDialog(JoinFrame.this, 
+                            "초기 투자금액은 최소 10,000원 이상이어야 합니다.", 
+                            "입력 오류", JOptionPane.WARNING_MESSAGE);
+                        return;
+                    }
+                    
+                    // 최대 금액 체크 (예: 100억원 이하)
+                    if (initialAsset.compareTo(new BigDecimal("10000000000")) > 0) {
+                        JOptionPane.showMessageDialog(JoinFrame.this, 
+                            "초기 투자금액은 최대 10,000,000,000원 이하여야 합니다.", 
+                            "입력 오류", JOptionPane.WARNING_MESSAGE);
+                        return;
+                    }
+                    
+                } catch (NumberFormatException ex) {
+                    JOptionPane.showMessageDialog(JoinFrame.this, 
+                        "초기 투자금액은 숫자만 입력해주세요.", 
+                        "입력 오류", JOptionPane.WARNING_MESSAGE);
+                    return;
+                }
+
+                // 3. 비밀번호 유효성 검사 (영문+숫자+특수문자 조합)
                 if (!isValidPassword(pw)) {
                     JOptionPane.showMessageDialog(JoinFrame.this, 
                         "비밀번호가 보안 규칙에 맞지 않습니다.\n(영문, 숫자, 특수문자 조합 8~16자)", 
@@ -109,13 +144,13 @@ public class JoinFrame extends JFrame {
                     return;
                 }
 
-                // 3. 비밀번호 일치 여부 확인
+                // 4. 비밀번호 일치 여부 확인
                 if (!pw.equals(pwConfirm)) {
                     JOptionPane.showMessageDialog(JoinFrame.this, "입력하신 두 비밀번호가 서로 다릅니다.", "확인 필요", JOptionPane.ERROR_MESSAGE);
                     return;
                 }
 
-                // 4. 이메일 중복 확인 및 가입 진행
+                // 5. 이메일 중복 확인 및 가입 진행
                 if (userDAO.isIdDuplicate(email)) {
                     JOptionPane.showMessageDialog(JoinFrame.this, "이미 사용 중인 이메일 주소입니다.", "중복 오류", JOptionPane.WARNING_MESSAGE);
                 } else {
@@ -124,13 +159,34 @@ public class JoinFrame extends JFrame {
                     user.setPassword(pw);
                     user.setNickname(email.split("@")[0]); // 이메일 앞부분을 기본 닉네임으로 설정
                     
-                    // DB 저장 시도
-                    if (userDAO.insertUser(user, phone)) {
-                        JOptionPane.showMessageDialog(JoinFrame.this, "회원가입이 정상적으로 완료되었습니다!\n로그인 화면으로 이동합니다.");
-                        new LoginFrame();
-                        dispose();
+                    // 6. DB 저장 시도 (사용자 + 초기 자산)
+                    boolean userCreated = userDAO.insertUser(user, phone);
+                    
+                    if (userCreated) {
+                        // 사용자 생성 성공 -> 초기 자산 생성
+                        boolean assetCreated = AssetDAO.createInitialAsset(email, initialAsset);
+                        
+                        if (assetCreated) {
+                            JOptionPane.showMessageDialog(JoinFrame.this, 
+                                "회원가입이 정상적으로 완료되었습니다!\n" +
+                                "초기 투자금액: " + String.format("%,d", initialAsset.longValue()) + "원\n" +
+                                "로그인 화면으로 이동합니다.",
+                                "가입 완료", JOptionPane.INFORMATION_MESSAGE);
+                            new LoginFrame();
+                            dispose();
+                        } else {
+                            // 자산 생성 실패 - 사용자는 생성되었으나 자산이 없는 상태
+                            JOptionPane.showMessageDialog(JoinFrame.this, 
+                                "회원가입은 완료되었으나 초기 자산 설정에 실패했습니다.\n" +
+                                "관리자에게 문의하거나 로그인 후 자산을 확인해주세요.", 
+                                "경고", JOptionPane.WARNING_MESSAGE);
+                            new LoginFrame();
+                            dispose();
+                        }
                     } else {
-                        JOptionPane.showMessageDialog(JoinFrame.this, "서버 오류로 가입에 실패했습니다. 잠시 후 다시 시도해주세요.", "DB 오류", JOptionPane.ERROR_MESSAGE);
+                        JOptionPane.showMessageDialog(JoinFrame.this, 
+                            "서버 오류로 가입에 실패했습니다. 잠시 후 다시 시도해주세요.", 
+                            "DB 오류", JOptionPane.ERROR_MESSAGE);
                     }
                 }
             }
