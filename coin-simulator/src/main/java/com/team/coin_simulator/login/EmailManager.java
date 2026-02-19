@@ -5,14 +5,15 @@ import javax.mail.*;
 import javax.mail.internet.*;
 
 public class EmailManager {
-    // 본인의 설정에 맞춰 수정하세요.
+
     private static final String SERVICE = "NAVER"; // "NAVER" 또는 "GOOGLE"
-    private static final String SENDER = "아이디@naver.com"; 
-    private static final String PASSWORD = "발급받은_앱_비밀번호"; 
+    private static final String SENDER = "네이버아이디@naver.com";
+    private static final String APP_PASSWORD = "네이버앱비밀번호"; // 앱 비밀번호!
 
     public static void sendMail(String recipient, String subject, String body) throws Exception {
         Properties props = new Properties();
-        if (SERVICE.equals("NAVER")) {
+
+        if ("NAVER".equalsIgnoreCase(SERVICE)) {
             props.put("mail.smtp.host", "smtp.naver.com");
             props.put("mail.smtp.port", "465");
             props.put("mail.smtp.auth", "true");
@@ -26,7 +27,7 @@ public class EmailManager {
 
         Session session = Session.getInstance(props, new Authenticator() {
             protected PasswordAuthentication getPasswordAuthentication() {
-                return new PasswordAuthentication(SENDER, PASSWORD);
+                return new PasswordAuthentication(SENDER, APP_PASSWORD);
             }
         });
 
@@ -35,6 +36,7 @@ public class EmailManager {
         message.setRecipients(Message.RecipientType.TO, InternetAddress.parse(recipient));
         message.setSubject(subject);
         message.setText(body);
+
         Transport.send(message);
     }
 }

@@ -33,7 +33,7 @@ public class MainFrame extends JFrame implements TimeController.TimeChangeListen
     private OrderPanel orderPanel;
     
     private TimeController timeController;
-    private String currentUserId = "user_01"; // 로그인 시스템 구현 전 임시 사용자
+    private String currentUserId = "jjh153702@naver.com"; // 로그인 시스템 구현 전 임시 사용자
     
     public MainFrame() {
         super("가상화폐 모의투자 시스템");
