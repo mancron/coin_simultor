@@ -363,7 +363,7 @@ public class OrderPanel extends JPanel implements UpbitWebSocketDao.TickerListen
             order.setRemainingVolume(qty);
             order.setStatus("WAIT");
 
-            boolean isSuccess = orderDAO.insertOrder(order, "test_user"); 
+            boolean isSuccess = orderDAO.insertOrder(order, "user_01"); 
 
             if (!isSuccess) {
                 throw new RuntimeException("데이터베이스 저장에 실패했습니다.");

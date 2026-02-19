@@ -26,7 +26,7 @@ public class databasecd {
         
         // 권장 설정: 60 (1시간 봉). 
         // 1 (1분 봉)은 시간이 매우 오래 걸리므로(약 1시간), 테스트 후 자기 전에 돌리세요.
-        int unit = 240; 
+        int unit = 1; 
         
         try {
         	DownloadDatabase.import6MonthsData(unit);

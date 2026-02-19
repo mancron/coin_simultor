@@ -18,6 +18,7 @@ import Investment_details.Investment_details_MainPanel;
  * 
  * 상단 버튼으로 두 화면 전환
  */
+
 public class MainFrame extends JFrame implements TimeController.TimeChangeListener {
     
     // 상단 패널
@@ -48,8 +49,10 @@ public class MainFrame extends JFrame implements TimeController.TimeChangeListen
     private static final String CARD_TRADING = "TRADING";
     private static final String CARD_INVESTMENT = "INVESTMENT";
     
-    public MainFrame() {
+    public MainFrame(String userId) {
+    	
         super("가상화폐 모의투자 시스템");
+        this.currentUserId = userId;
         
         timeController = TimeController.getInstance();
         timeController.initialize(currentUserId);
@@ -142,7 +145,7 @@ public class MainFrame extends JFrame implements TimeController.TimeChangeListen
         panel.setBackground(Color.WHITE);
         
         // 왼쪽: 코인 목록
-        historyPanel = new HistoryPanel();
+        historyPanel = new HistoryPanel(currentUserId);
         historyPanel.setPreferredSize(new Dimension(350, 0));
         historyPanel.addCoinSelectionListener(this::onCoinSelected);
         
@@ -299,7 +302,7 @@ public class MainFrame extends JFrame implements TimeController.TimeChangeListen
         }
         
         SwingUtilities.invokeLater(() -> {
-            new MainFrame();
+            new MainFrame("user_01");
         });
     }
 }
