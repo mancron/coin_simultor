@@ -94,7 +94,7 @@ public class LoginFrame extends JFrame {
             UserDTO user = UserDAO.loginCheck(userId, password);
             if (user != null) {
                 JOptionPane.showMessageDialog(this, user.getNickname() + "님, 환영합니다!");
-                new MainFrame();   // 🔥 메인화면 실행
+                new MainFrame(user.getUserId());   // 🔥 메인화면 실행
                 this.dispose();    // 로그인창 닫기
             }
             else {
