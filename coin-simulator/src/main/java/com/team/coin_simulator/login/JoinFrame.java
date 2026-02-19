@@ -1,42 +1,23 @@
 package com.team.coin_simulator.login;
 
-import java.awt.Color;
-import java.awt.Component;
-import java.awt.Dimension;
-import java.awt.Font;
-import java.awt.Graphics;
-import java.awt.Graphics2D;
-import java.awt.GridBagLayout;
-import java.awt.Insets;
-import java.awt.RenderingHints;
-import java.awt.geom.Ellipse2D;
-import java.awt.geom.Path2D;
-
-import javax.swing.BorderFactory;
-import javax.swing.Box;
-import javax.swing.BoxLayout;
-import javax.swing.Icon;
-import javax.swing.JButton;
-import javax.swing.JFrame;
-import javax.swing.JLabel;
-import javax.swing.JPanel;
-import javax.swing.JPasswordField;
-import javax.swing.JTextField;
-import javax.swing.SwingConstants;
-import javax.swing.SwingUtilities;
-import javax.swing.border.EmptyBorder;
+import java.awt.*;
+import javax.swing.*;
 import javax.swing.border.LineBorder;
 import javax.swing.border.TitledBorder;
+import DAO.UserDAO;
+import DTO.UserDTO;
 
 public class JoinFrame extends JFrame {
-    
     private final Font fontBold = new Font("맑은 고딕", Font.BOLD, 14);
     private final Font fontPlain = new Font("맑은 고딕", Font.PLAIN, 12);
     private final Font fontSmall = new Font("맑은 고딕", Font.PLAIN, 11);
 
+    private UserDAO userDAO = new UserDAO();
+    private JTextField[] fields = new JTextField[5]; 
+
     public JoinFrame() {
         setTitle("ONBIT 회원가입");
-        setSize(460, 820); 
+        setSize(460, 750); 
         setLocationRelativeTo(null);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setResizable(false);
@@ -47,160 +28,123 @@ public class JoinFrame extends JFrame {
         JPanel card = new JPanel();
         card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
         card.setBackground(Color.WHITE);
-        card.setPreferredSize(new Dimension(380, 740)); 
+        card.setPreferredSize(new Dimension(380, 650));
         card.setBorder(BorderFactory.createCompoundBorder(
                 new LineBorder(new Color(230, 230, 230), 1),
-                new EmptyBorder(35, 30, 30, 30)));
+                BorderFactory.createEmptyBorder(30, 30, 30, 30)));
 
-        // 로고 및 타이틀
-        JLabel logoLabel = new JLabel("ONBIT");
-        logoLabel.setFont(new Font("Arial", Font.BOLD, 28));
-        logoLabel.setForeground(new Color(33, 99, 184));
-        logoLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
-        
-        JLabel subtitle = new JLabel("회원가입");
-        subtitle.setFont(fontPlain);
-        subtitle.setForeground(Color.GRAY);
-        subtitle.setAlignmentX(Component.CENTER_ALIGNMENT);
+        JLabel titleLabel = new JLabel("회원가입");
+        titleLabel.setFont(new Font("맑은 고딕", Font.BOLD, 22));
+        titleLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+        card.add(titleLabel);
+        card.add(Box.createVerticalStrut(25));
 
-        card.add(logoLabel);
-        card.add(Box.createVerticalStrut(5));
-        card.add(subtitle);
-        card.add(Box.createVerticalStrut(30));
-
-        // 입력 필드들
         String[] labels = {"이메일", "비밀번호", "비밀번호 확인", "휴대폰 번호", "초기 자산 설정 (KRW)"};
-        for (String label : labels) {
-            JTextField field = (label.contains("비밀번호")) ? new JPasswordField() : new JTextField();
-            styleField(field, label);
+        for (int i = 0; i < labels.length; i++) {
+            JTextField field = (labels[i].contains("비밀번호")) ? new JPasswordField() : new JTextField();
+            styleField(field, labels[i]);
+            fields[i] = field; 
             card.add(field);
             card.add(Box.createVerticalStrut(12));
         }
 
+        // 비밀번호 도움말 문구 추가
+        JLabel pwHint = new JLabel(" * 비밀번호: 영문, 숫자, 특수문자 포함 8~16자");
+        pwHint.setFont(new Font("맑은 고딕", Font.PLAIN, 10));
+        pwHint.setForeground(new Color(33, 99, 184));
+        pwHint.setAlignmentX(Component.CENTER_ALIGNMENT);
+        card.add(pwHint);
+        card.add(Box.createVerticalStrut(10));
+
         JButton joinBtn = new JButton("가입하기");
         stylePrimaryBtn(joinBtn);
-        card.add(Box.createVerticalStrut(15));
+        
+        joinBtn.addActionListener(e -> {
+            String email = fields[0].getText().trim();
+            String pw = new String(((JPasswordField)fields[1]).getPassword());
+            String pwConfirm = new String(((JPasswordField)fields[2]).getPassword());
+            String phone = fields[3].getText().trim();
+            
+            // 1. 공백 검사
+            if (email.isEmpty() || pw.isEmpty() || phone.isEmpty()) {
+                JOptionPane.showMessageDialog(this, "모든 정보를 입력해주세요.");
+                return;
+            }
+
+            // 2. 비밀번호 유효성 검사 (정규식 적용)
+            if (!isValidPassword(pw)) {
+                JOptionPane.showMessageDialog(this, 
+                    "비밀번호 형식이 올바르지 않습니다.\n(영문, 숫자, 특수문자 조합 8~16자)", 
+                    "보안 취약", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+
+            // 3. 비밀번호 일치 확인
+            if (!pw.equals(pwConfirm)) {
+                JOptionPane.showMessageDialog(this, "비밀번호 확인이 일치하지 않습니다.");
+                return;
+            }
+
+            // 4. 가입 처리
+            if (userDAO.isIdDuplicate(email)) {
+                JOptionPane.showMessageDialog(this, "이미 가입된 이메일입니다.");
+            } else {
+                UserDTO newUser = new UserDTO(email, pw, "별명미지정");
+                // DB 설계에 따라 phone 정보도 저장하려면 DTO/DAO 수정 필요
+                if (userDAO.insertUser(newUser)) {
+                    JOptionPane.showMessageDialog(this, "가입 성공!");
+                    new LoginFrame();
+                    this.dispose();
+                }
+            }
+        });
         card.add(joinBtn);
 
-        card.add(Box.createVerticalStrut(20));
-        JLabel orLabel = new JLabel("또는");
-        orLabel.setFont(fontSmall);
-        orLabel.setForeground(Color.LIGHT_GRAY);
-        orLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
-        card.add(orLabel);
-        card.add(Box.createVerticalStrut(20));
-
-        // ===== 구글 버튼 (중앙 정렬 수정) =====
-        JButton googleBtn = new JButton("구글로 시작하기");
-        googleBtn.setIcon(createGoogleLogo());
-        styleSocialBtn(googleBtn, Color.WHITE, new Color(33, 99, 184), true);
-        // 중앙 정렬을 위해 수정
-        googleBtn.setHorizontalAlignment(SwingConstants.CENTER);
-        googleBtn.setIconTextGap(15); 
-
-        // ===== 카카오 버튼 (중앙 정렬 수정) =====
-        JButton kakaoBtn = new JButton("카카오로 시작하기");
-        kakaoBtn.setIcon(createKakaoLogo());
-        styleSocialBtn(kakaoBtn, new Color(254, 229, 0), new Color(60, 30, 30), false);
-        // 중앙 정렬을 위해 수정
-        kakaoBtn.setHorizontalAlignment(SwingConstants.CENTER);
-        kakaoBtn.setIconTextGap(15);
-
-        card.add(googleBtn);
-        card.add(Box.createVerticalStrut(10));
-        card.add(kakaoBtn);
-        
-        card.add(Box.createVerticalGlue());
+        card.add(Box.createVerticalStrut(15));
         JButton backBtn = new JButton("이미 계정이 있으신가요? 로그인");
         backBtn.setFont(fontSmall);
-        backBtn.setAlignmentX(Component.CENTER_ALIGNMENT);
-        backBtn.setContentAreaFilled(false);
-        backBtn.setBorderPainted(false);
         backBtn.setForeground(Color.GRAY);
-        backBtn.addActionListener(e -> this.dispose());
-
+        backBtn.setBorderPainted(false);
+        backBtn.setContentAreaFilled(false);
+        backBtn.setAlignmentX(Component.CENTER_ALIGNMENT);
+        backBtn.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        backBtn.addActionListener(ev -> {
+            new LoginFrame();
+            this.dispose();
+        });
         card.add(backBtn);
+
         root.add(card);
         add(root);
         setVisible(true);
     }
 
-    private Icon createGoogleLogo() {
-        return new Icon() {
-            @Override
-            public void paintIcon(Component c, Graphics g, int x, int y) {
-                Graphics2D g2 = (Graphics2D) g.create();
-                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                g2.setFont(new Font("Arial", Font.BOLD, 18));
-                g2.setColor(new Color(66, 133, 244));
-                g2.drawString("G", x, y + 15); // 높이 미세 조정
-                g2.dispose();
-            }
-            @Override public int getIconWidth() { return 20; }
-            @Override public int getIconHeight() { return 20; }
-        };
-    }
-
-    private Icon createKakaoLogo() {
-        return new Icon() {
-            @Override
-            public void paintIcon(Component c, Graphics g, int x, int y) {
-                Graphics2D g2 = (Graphics2D) g.create();
-                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                g2.setColor(new Color(60, 30, 30));
-                g2.fill(new Ellipse2D.Double(x, y + 2, 18, 14));
-                Path2D.Double path = new Path2D.Double();
-                path.moveTo(x + 4, y + 14);
-                path.lineTo(x + 1, y + 18);
-                path.lineTo(x + 8, y + 15);
-                path.closePath();
-                g2.fill(path);
-                g2.dispose();
-            }
-            @Override public int getIconWidth() { return 20; }
-            @Override public int getIconHeight() { return 20; }
-        };
+    /**
+     * 비밀번호 검증 메서드
+     */
+    private boolean isValidPassword(String password) {
+        // 영문, 숫자, 특수문자($@$!%*#?&)가 최소 하나씩 포함된 8~16자
+        String regex = "^(?=.*[A-Za-z])(?=.*\\d)(?=.*[$@$!%*#?&])[A-Za-z\\d$@$!%*#?&]{8,16}$";
+        return password.matches(regex);
     }
 
     private void styleField(JTextField field, String title) {
         field.setMaximumSize(new Dimension(320, 50));
-        field.setPreferredSize(new Dimension(320, 50));
         TitledBorder border = BorderFactory.createTitledBorder(new LineBorder(new Color(230, 230, 230)), title);
         border.setTitleFont(fontSmall);
         field.setBorder(border);
-        field.setFont(fontPlain);
         field.setAlignmentX(Component.CENTER_ALIGNMENT);
     }
 
     private void stylePrimaryBtn(JButton btn) {
-        btn.setMaximumSize(new Dimension(320, 48));
-        btn.setPreferredSize(new Dimension(320, 48));
+        btn.setMaximumSize(new Dimension(320, 50));
         btn.setBackground(new Color(33, 99, 184));
         btn.setForeground(Color.WHITE);
         btn.setFont(fontBold);
-        btn.setFocusPainted(false);
-        btn.setBorderPainted(false);
-        btn.setOpaque(true);
         btn.setAlignmentX(Component.CENTER_ALIGNMENT);
-    }
-
-    private void styleSocialBtn(JButton btn, Color bg, Color fg, boolean hasBorder) {
-        btn.setMaximumSize(new Dimension(320, 48));
-        btn.setPreferredSize(new Dimension(320, 48));
-        btn.setBackground(bg);
-        btn.setForeground(fg);
-        btn.setFont(fontBold);
-        btn.setFocusPainted(false);
-        btn.setOpaque(true);
-        btn.setAlignmentX(Component.CENTER_ALIGNMENT);
-        
-        // 핵심 수정: 왼쪽 마진을 없애고 전체 중앙 정렬로 변경
-        btn.setMargin(new Insets(0, 0, 0, 0)); 
-        if (hasBorder) btn.setBorder(new LineBorder(new Color(230, 230, 230), 1));
-        else btn.setBorderPainted(false);
     }
 
     public static void main(String[] args) {
-        SwingUtilities.invokeLater(JoinFrame::new);
+        SwingUtilities.invokeLater(() -> new JoinFrame());
     }
 }

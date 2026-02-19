@@ -69,6 +69,24 @@ public class UserDAO {
      * @param password 입력한 비밀번호
      * @return 성공 시 유저 정보 DTO, 실패 시 null
      */
+ // UserDAO 클래스 안에 추가하세요
+    public String findIdByPhone(String phone) {
+        String sql = "SELECT user_id FROM users WHERE phone_number = ?"; // 컬럼명은 DB와 맞춰야 함
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            
+            pstmt.setString(1, phone);
+            ResultSet rs = pstmt.executeQuery();
+            
+            if (rs.next()) {
+                return rs.getString("user_id");
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+    
     public UserDTO loginCheck(String userId, String password) {
         String sql = "SELECT user_id, nickname, auth_provider, created_at FROM users "
                    + "WHERE user_id = ? AND password = ?";
