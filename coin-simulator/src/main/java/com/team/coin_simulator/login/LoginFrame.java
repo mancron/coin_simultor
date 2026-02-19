@@ -8,6 +8,7 @@ import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
+import java.awt.event.ActionListener;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 
@@ -103,6 +104,19 @@ public class LoginFrame extends JFrame {
         });
         card.add(loginBtn);
 
+        // 로그인 액션을 별도로 정의
+        ActionListener loginAction = e -> {
+            String userId = idField.getText().trim();
+            String password = new String(pwField.getPassword());
+            // ... 로그인 로직
+        };
+
+        // 버튼 클릭 시
+        loginBtn.addActionListener(loginAction);
+
+        // Enter 키 누를 시 (아이디 필드 또는 비밀번호 필드에서)
+        idField.addActionListener(loginAction);
+        pwField.addActionListener(loginAction);
         // 아이디/비밀번호 찾기
         card.add(Box.createVerticalStrut(25));
         JPanel linkPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 15, 0));

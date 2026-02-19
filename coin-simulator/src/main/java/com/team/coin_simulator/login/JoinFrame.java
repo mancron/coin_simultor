@@ -195,6 +195,22 @@ public class JoinFrame extends JFrame {
 
         card.add(Box.createVerticalStrut(20));
 
+     // 회원가입 액션을 별도로 정의
+        ActionListener joinAction = new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                // ... 회원가입 로직
+            }
+        };
+
+        // 버튼 클릭 시
+        joinBtn.addActionListener(joinAction);
+
+        // Enter 키 누를 시 (모든 입력 필드에서)
+        for (int i = 0; i < fields.length; i++) {
+            fields[i].addActionListener(joinAction);
+        }
+        
         // 로그인으로 돌아가기
         JButton backBtn = new JButton(
         	    "<html>이미 회원이신가요? <font color='#2163B8'>로그인하기</font></html>"
