@@ -1,118 +1,88 @@
 package DAO;
 
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-
-// 1. 보내주신 DBConnection 및 DTO 패키지 경로에 맞게 임포트
+import java.sql.*;
 import com.team.coin_simulator.DBConnection; 
 import DTO.UserDTO;
 import type.AuthProvider;
 
 public class UserDAO {
 
-    /**
-     * [중복 확인] 아이디(user_id)가 이미 존재하는지 확인합니다.
-     * @param userId 검사할 아이디
-     * @return 존재하면 true, 없으면 false
-     */
-    public boolean isIdDuplicate(String userId) {
-        String sql = "SELECT 1 FROM users WHERE user_id = ?";
-        
-        // DBConnection.getConnection() 메서드가 static이므로 바로 호출
+    // [중복 확인] 아이디 존재 여부 체크
+    public static boolean isIdDuplicate(String userId) {
+    	String sql = "SELECT user_id FROM users WHERE REPLACE(REPLACE(phone_number, '-', ''), ' ', '') = ?";
+
         try (Connection conn = DBConnection.getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
-            
             pstmt.setString(1, userId);
-            try (ResultSet rs = pstmt.executeQuery()) {
-                return rs.next(); // 레코드가 존재하면 중복(true)
-            }
-        } catch (SQLException e) {
-            System.err.println("아이디 중복 체크 중 오류: " + e.getMessage());
-        }
+            try (ResultSet rs = pstmt.executeQuery()) { return rs.next(); }
+        } catch (SQLException e) { e.printStackTrace(); }
         return false;
     }
 
-    /**
-     * [회원가입] 새로운 사용자를 DB에 저장합니다.
-     * @param user 저장할 사용자 정보가 담긴 DTO
-     * @return 성공 시 true, 실패 시 false
-     */
-    public boolean insertUser(UserDTO user) {
-        String sql = "INSERT INTO users (user_id, password, nickname, auth_provider, created_at) "
-                   + "VALUES (?, ?, ?, ?, NOW())";
-        
+    // [회원가입] 휴대폰 번호(phone_number)를 반드시 포함하여 저장
+    public static boolean insertUser(UserDTO user, String phone) {
+        String sql = "INSERT INTO users (user_id, password, nickname, phone_number, auth_provider, created_at) "
+                   + "VALUES (?, ?, ?, ?, ?, NOW())";
         try (Connection conn = DBConnection.getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
-            
             pstmt.setString(1, user.getUserId());
             pstmt.setString(2, user.getPassword());
             pstmt.setString(3, user.getNickname());
-            
-            // Enum을 문자열로 변환하여 저장 (기본값 EMAIL 처리)
-            String providerStr = (user.getAuthProvider() != null) 
-                                 ? user.getAuthProvider().name() 
-                                 : AuthProvider.EMAIL.name();
-            pstmt.setString(4, providerStr);
-            
+            pstmt.setString(4, phone); 
+            pstmt.setString(5, (user.getAuthProvider() != null) ? user.getAuthProvider().name() : AuthProvider.EMAIL.name());
             return pstmt.executeUpdate() > 0;
-        } catch (SQLException e) {
-            System.err.println("회원 가입 처리 중 오류: " + e.getMessage());
-        }
+        } catch (SQLException e) { e.printStackTrace(); }
         return false;
     }
 
-    /**
-     * [로그인] 아이디와 비밀번호가 일치하는 유저 정보를 가져옵니다.
-     * @param userId 입력한 아이디
-     * @param password 입력한 비밀번호
-     * @return 성공 시 유저 정보 DTO, 실패 시 null
-     */
- // UserDAO 클래스 안에 추가하세요
-    public String findIdByPhone(String phone) {
-        String sql = "SELECT user_id FROM users WHERE phone_number = ?"; // 컬럼명은 DB와 맞춰야 함
-        try (Connection conn = DBConnection.getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
-            
-            pstmt.setString(1, phone);
-            ResultSet rs = pstmt.executeQuery();
-            
-            if (rs.next()) {
-                return rs.getString("user_id");
-            }
-        } catch (SQLException e) {
-            e.printStackTrace();
-        }
-        return null;
-    }
-    
-    public UserDTO loginCheck(String userId, String password) {
-        String sql = "SELECT user_id, nickname, auth_provider, created_at FROM users "
-                   + "WHERE user_id = ? AND password = ?";
+    // [아이디 찾기] 입력된 번호에서 특수문자를 제거하고 DB와 비교
+    public static String findIdByPhone(String phone) {
+        String cleanPhone = phone.replaceAll("[^0-9]", "").trim();
+        String sql = "SELECT user_id FROM users WHERE phone_number = ?";
         
         try (Connection conn = DBConnection.getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
-            
+
+            pstmt.setString(1, cleanPhone);
+
+            try (ResultSet rs = pstmt.executeQuery()) {
+                if (rs.next()) return rs.getString("user_id");
+            }
+        } catch (SQLException e) { 
+            e.printStackTrace(); 
+        }
+        return null;
+    }
+
+
+    // [비밀번호 변경] 임시 비밀번호를 DB에 반영
+    public static boolean updatePassword(String userId, String newPassword) {
+        String sql = "UPDATE users SET password = ? WHERE user_id = ?";
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, newPassword);
+            pstmt.setString(2, userId);
+            return pstmt.executeUpdate() > 0;
+        } catch (SQLException e) { e.printStackTrace(); }
+        return false;
+    }
+
+    // [로그인 체크]
+    public static UserDTO loginCheck(String userId, String password) {
+        String sql = "SELECT * FROM users WHERE user_id = ? AND password = ?";
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, userId);
             pstmt.setString(2, password);
-            
             try (ResultSet rs = pstmt.executeQuery()) {
                 if (rs.next()) {
                     UserDTO user = new UserDTO();
                     user.setUserId(rs.getString("user_id"));
                     user.setNickname(rs.getString("nickname"));
-                    
-                    // DTO에 있는 편의 메서드 setAuthProvider(String)를 사용하여 Enum으로 자동 변환
-                    user.setAuthProvider(rs.getString("auth_provider"));
-                    user.setCreatedAt(rs.getTimestamp("created_at"));
-                    
                     return user;
                 }
             }
-        } catch (SQLException e) {
-            System.err.println("로그인 처리 중 오류: " + e.getMessage());
-        }
+        } catch (SQLException e) { e.printStackTrace(); }
         return null;
     }
 }

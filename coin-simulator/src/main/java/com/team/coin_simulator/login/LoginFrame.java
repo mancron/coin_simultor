@@ -114,7 +114,9 @@ public class LoginFrame extends JFrame {
                     "가입 시 등록한 휴대폰 번호를 입력해주세요.", "아이디 찾기", JOptionPane.QUESTION_MESSAGE);
                 
                 if (phone != null && !phone.isEmpty()) {
+                    phone = phone.trim().replace("-", "");
                     String foundId = userDAO.findIdByPhone(phone);
+
                     if (foundId != null) {
                         JOptionPane.showMessageDialog(LoginFrame.this, 
                             "찾으시는 아이디는 [" + foundId + "] 입니다.", "아이디 찾기 성공", JOptionPane.INFORMATION_MESSAGE);
@@ -125,27 +127,34 @@ public class LoginFrame extends JFrame {
                 }
             }
         });
-
         // 비밀번호 찾기 이벤트
         findPwLabel.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
-                String email = JOptionPane.showInputDialog(LoginFrame.this, 
-                    "아이디(이메일)를 입력해주세요.", "비밀번호 찾기", JOptionPane.QUESTION_MESSAGE);
-                
-                if (email != null && !email.isEmpty()) {
-                    if (userDAO.isIdDuplicate(email)) {
-                        JOptionPane.showMessageDialog(LoginFrame.this, 
-                            email + "님, 비밀번호 재설정 안내를 확인해주세요.\n(실제 메일 발송은 SMTP 설정이 필요합니다.)", 
-                            "안내", JOptionPane.INFORMATION_MESSAGE);
-                    } else {
-                        JOptionPane.showMessageDialog(LoginFrame.this, 
-                            "존재하지 않는 아이디입니다.", "실패", JOptionPane.ERROR_MESSAGE);
-                    }
+                String email = JOptionPane.showInputDialog("가입하신 이메일 주소를 입력해주세요.");
+                if (email == null || email.isEmpty()) return;
+
+                if (userDAO.isIdDuplicate(email)) {
+                    // 임시 비밀번호 생성 (예: ONBIT12345)
+                    String tempPw = "ONBIT" + (int)(Math.random() * 89999 + 10000);
+                    
+                    // 메일 전송은 네트워크 작업이므로 별도 쓰레드에서 실행
+                    new Thread(() -> {
+                        try {
+                            EmailManager.sendMail(email, "[ONBIT] 임시 비밀번호 안내", "요청하신 임시 비밀번호는 " + tempPw + " 입니다.");
+                             TODO: userDAO.updatePassword(email, tempPw); // DB의 비번도 업데이트해야 함
+                            JOptionPane.showMessageDialog(null, "임시 비밀번호가 메일로 발송되었습니다.");
+                        } catch (Exception ex) {
+                            JOptionPane.showMessageDialog(null, "메일 발송에 실패했습니다. 설정 및 앱 비밀번호를 확인하세요.");
+                            ex.printStackTrace();
+                        }
+                    }).start();
+                } else {
+                    JOptionPane.showMessageDialog(null, "등록되지 않은 사용자 정보입니다.");
                 }
             }
         });
-
+        
         linkPanel.add(findIdLabel);
         JLabel separator = new JLabel("|");
         separator.setForeground(Color.LIGHT_GRAY);
