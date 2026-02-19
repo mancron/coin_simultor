@@ -180,13 +180,13 @@ public class MainFrame extends JFrame implements TimeController.TimeChangeListen
         if (isTradingView) {
             // 거래 화면으로 전환
             mainCardLayout.show(mainContentPanel, CARD_TRADING);
-            btnToggleView.setText("📊 투자내역 보기");
+            btnToggleView.setText("투자내역 보기");
             btnToggleView.setBackground(new Color(52, 152, 219));
             
         } else {
             // 투자내역 화면으로 전환
             mainCardLayout.show(mainContentPanel, CARD_INVESTMENT);
-            btnToggleView.setText("💹 거래화면 보기");
+            btnToggleView.setText("거래화면 보기");
             btnToggleView.setBackground(new Color(46, 204, 113));
             
             // 투자내역 데이터 새로고침
