@@ -480,7 +480,7 @@ BigDecimal priceBD = new BigDecimal(cleanPrice);
                     mockBalance.put("KRW", krwBal.add(sellTotalKRW));
 
                     //토스트 알림 띄우기
-
+                    String msg = String.format("[체결] %s 시장가 매도 완료 (%,.0f KRW)", selectedCoinCode, sellTotalKRW);
                     // 부모 프레임(MainFrame)을 찾아서 알림 전달
                     JFrame parentFrame = (JFrame) SwingUtilities.getWindowAncestor(this);
                     com.team.coin_simulator.Alerts.NotificationUtil.showToast(parentFrame, msg);

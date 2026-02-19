@@ -5,9 +5,14 @@ import com.team.coin_simulator.*;
 import com.team.coin_simulator.Alerts.NotificationUtil;
 import javax.swing.JFrame;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.util.LinkedList;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
 import javax.swing.SwingUtilities;
 
 public class PriceAlertService implements UpbitWebSocketDao.TickerListener {
@@ -75,4 +80,39 @@ public class PriceAlertService implements UpbitWebSocketDao.TickerListener {
             e.printStackTrace();
         }
     }
+    
+ // 코인별 가격 기록 (최근 180초 데이터)
+ // Key: "KRW-BTC", Value: 시간순 가격 리스트 (LinkedList 사용)
+ private Map<String, LinkedList<BigDecimal>> priceHistory = new ConcurrentHashMap<>();
+
+ public void checkVolatility(String symbol, BigDecimal currentPrice) {
+     LinkedList<BigDecimal> history = priceHistory.computeIfAbsent(symbol, k -> new LinkedList<>());
+     
+     // 1. 현재 가격 추가
+     history.add(currentPrice);
+     
+     // 2. 데이터 개수 체크 (테스트 할 때는 180 대신 5로 줄여서 하세요!)
+     if (history.size() > 180) {
+         BigDecimal oldPrice = history.poll(); // n초 전 가격 꺼내기
+         
+         // [안전장치] 0으로 나누기 오류 방지
+         if (oldPrice.compareTo(BigDecimal.ZERO) == 0) return;
+
+         // 3. 급등락 계산
+         BigDecimal diff = currentPrice.subtract(oldPrice);
+         BigDecimal rate = diff.divide(oldPrice, 4, RoundingMode.HALF_UP).multiply(new BigDecimal(100));
+         
+         // 4. 절대값이 3% 이상이면 알림 발송
+         if (rate.abs().compareTo(new BigDecimal("3.0")) >= 0) {
+             
+             String type = rate.compareTo(BigDecimal.ZERO) > 0 ? "급등" : "급락";
+             String msg = String.format("⚠️ [%s] %s 발생! (%.2f%% 변동)", symbol, type, rate);
+             javax.swing.SwingUtilities.invokeLater(() -> 
+                 com.team.coin_simulator.Alerts.NotificationUtil.showToast(mainFrame, msg)
+             );
+             
+             history.clear(); // 알림 폭탄 방지 (기록 초기화)
+         }
+     }
+ }
 }
