@@ -83,7 +83,9 @@ public class LoginFrame extends JFrame {
 
         JButton loginBtn = new JButton("로그인");
         stylePrimaryBtn(loginBtn);
-        loginBtn.addActionListener(e -> {
+        
+        // 로그인 액션 정의 (버튼 클릭 및 Enter 키 공통 사용)
+        ActionListener loginAction = e -> {
             String userId = idField.getText().trim();
             String password = new String(pwField.getPassword());
 
@@ -95,28 +97,27 @@ public class LoginFrame extends JFrame {
             UserDTO user = UserDAO.loginCheck(userId, password);
             if (user != null) {
                 JOptionPane.showMessageDialog(this, user.getNickname() + "님, 환영합니다!");
-                new MainFrame();   // 🔥 메인화면 실행
+                
+                // 메인 프레임 실행
+                SwingUtilities.invokeLater(() -> {
+                    new MainFrame();
+                });
                 this.dispose();    // 로그인창 닫기
             }
             else {
                 JOptionPane.showMessageDialog(this, "아이디 또는 비밀번호가 일치하지 않습니다.", "로그인 실패", JOptionPane.ERROR_MESSAGE);
             }
-        });
-        card.add(loginBtn);
-
-        // 로그인 액션을 별도로 정의
-        ActionListener loginAction = e -> {
-            String userId = idField.getText().trim();
-            String password = new String(pwField.getPassword());
-            // ... 로그인 로직
         };
 
-        // 버튼 클릭 시
+        // 버튼 클릭 시 로그인
         loginBtn.addActionListener(loginAction);
 
-        // Enter 키 누를 시 (아이디 필드 또는 비밀번호 필드에서)
+        // Enter 키 누를 시 로그인 (아이디 필드 또는 비밀번호 필드에서)
         idField.addActionListener(loginAction);
         pwField.addActionListener(loginAction);
+        
+        card.add(loginBtn);
+
         // 아이디/비밀번호 찾기
         card.add(Box.createVerticalStrut(25));
         JPanel linkPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 15, 0));
@@ -156,7 +157,7 @@ public class LoginFrame extends JFrame {
                 String input = JOptionPane.showInputDialog(LoginFrame.this, "가입하신 이메일 주소를 입력해주세요.");
                 if (input == null) return;
 
-                final String email = input.trim();   // ✅ final 로 고정
+                final String email = input.trim();
                 if (email.isEmpty()) return;
 
                 if (UserDAO.isIdDuplicate(email)) {
@@ -164,7 +165,7 @@ public class LoginFrame extends JFrame {
 
                     new Thread(() -> {
                         try {
-                            // (안전하게) 메일 먼저 보내고 성공하면 DB 업데이트
+                            // 메일 먼저 보내고 성공하면 DB 업데이트
                             EmailManager.sendMail(
                                     email,
                                     "[ONBIT] 임시 비밀번호 안내",
@@ -189,7 +190,6 @@ public class LoginFrame extends JFrame {
                 }
             }
         });
-
 
         linkPanel.add(findIdLabel);
         JLabel separator = new JLabel("|");
@@ -262,4 +262,3 @@ public class LoginFrame extends JFrame {
         SwingUtilities.invokeLater(LoginFrame::new);
     }
 }
-

@@ -89,11 +89,12 @@ public class JoinFrame extends JFrame {
         
         card.add(Box.createVerticalStrut(30));
 
-        // 가입하기 버튼 및 상세 로직
+        // 가입하기 버튼
         JButton joinBtn = new JButton("가입 완료");
         stylePrimaryBtn(joinBtn);
         
-        joinBtn.addActionListener(new ActionListener() {
+        // 회원가입 액션 정의 (버튼 클릭 및 Enter 키 공통 사용)
+        ActionListener joinAction = new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
                 String email = fields[0].getText().trim();
@@ -190,26 +191,18 @@ public class JoinFrame extends JFrame {
                     }
                 }
             }
-        });
-        card.add(joinBtn);
-
-        card.add(Box.createVerticalStrut(20));
-
-     // 회원가입 액션을 별도로 정의
-        ActionListener joinAction = new ActionListener() {
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                // ... 회원가입 로직
-            }
         };
-
-        // 버튼 클릭 시
+        
+        // 버튼 클릭 시 회원가입
         joinBtn.addActionListener(joinAction);
 
-        // Enter 키 누를 시 (모든 입력 필드에서)
+        // Enter 키 누를 시 회원가입 (모든 입력 필드에서)
         for (int i = 0; i < fields.length; i++) {
             fields[i].addActionListener(joinAction);
         }
+        
+        card.add(joinBtn);
+        card.add(Box.createVerticalStrut(20));
         
         // 로그인으로 돌아가기
         JButton backBtn = new JButton(
