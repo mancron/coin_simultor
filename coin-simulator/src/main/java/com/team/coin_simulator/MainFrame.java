@@ -112,6 +112,13 @@ public class MainFrame extends JFrame implements TimeController.TimeChangeListen
         
         // 기존 호가창 패널 제거 및 새 호가창 생성
         updateOrderBookPanel(coinSymbol);
+        
+        //3. 주문 패널(OrderPanel)에도 알려주기!
+        // ===================================================
+        if (orderPanel != null) {
+            // OrderPanel의 setSelectedCoin 메서드를 호출해서 코인 변경 지시
+            orderPanel.setSelectedCoin(coinSymbol);
+        }
     }
     
     /**
@@ -216,6 +223,7 @@ public class MainFrame extends JFrame implements TimeController.TimeChangeListen
         
         super.dispose();
     }
+    
     
     public static void main(String[] args) {
         // Swing Look and Feel 설정
