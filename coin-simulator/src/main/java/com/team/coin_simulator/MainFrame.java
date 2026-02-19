@@ -14,7 +14,7 @@ import Investment_details.Investment_details_MainPanel;
  * 
  * 화면 구성:
  * 1. 거래 화면 (Trading View): 코인목록 + 차트 + 호가창 + 주문
- * 2. 투자내역 화면 (Investment View): 보유자산/투자손익/거래내역/미체결
+ * 2. 투자내역 화면 (Investment View): 보유자산/투자손익/거래내역/미결
  * 
  * 상단 버튼으로 두 화면 전환
  */

@@ -127,10 +127,29 @@ public class OrderPanel extends JPanel implements UpbitWebSocketDao.TickerListen
         infoContainer.add(Box.createVerticalStrut(20));
 
         // [버튼 영역]
-        btnAction = new JButton("매수");
-        btnAction.setBackground(COLOR_BID);
+        btnAction = new JButton("매수") {
+            @Override
+            protected void paintComponent(Graphics g) {
+                // 버튼을 마우스로 눌렀을 때(Armed) 살짝 어두워지는 디테일 추가
+                if (getModel().isArmed()) {
+                    g.setColor(getBackground().darker());
+                } else {
+                    g.setColor(getBackground());
+                }
+                g.fillRect(0, 0, getWidth(), getHeight());
+                super.paintComponent(g);
+            }
+        };
+
+        btnAction.setBackground(COLOR_BID); 
         btnAction.setForeground(Color.WHITE);
         btnAction.setFont(new Font("맑은 고딕", Font.BOLD, 18));
+        
+        // OS의 회색 기본 스킨이 덧칠해지는 것을 완벽하게 차단
+        btnAction.setContentAreaFilled(false); 
+        btnAction.setOpaque(false); 
+        btnAction.setFocusPainted(false);
+        
         btnAction.setPreferredSize(btnSize);
         btnAction.setMinimumSize(btnSize);
         btnAction.setMaximumSize(btnSize);
