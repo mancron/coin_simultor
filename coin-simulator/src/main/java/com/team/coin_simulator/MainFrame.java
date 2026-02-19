@@ -42,15 +42,16 @@ public class MainFrame extends JFrame implements TimeController.TimeChangeListen
     
     // 상태 관리
     private TimeController timeController;
-    private String currentUserId = "user_01";
+
+    private String currentUserId = "jjh153702@naver.com"; // 로그인 시스템 구현 전 임시 사용자
     private boolean isTradingView = true; // true: 거래화면, false: 투자내역
     
     // 카드 식별자
     private static final String CARD_TRADING = "TRADING";
     private static final String CARD_INVESTMENT = "INVESTMENT";
+
     
     public MainFrame(String userId) {
-    	
         super("가상화폐 모의투자 시스템");
         this.currentUserId = userId;
         
