@@ -204,6 +204,43 @@ public class UserDAO {
         }
     }
 
+    public static String updateNicknameWithError(String userId, String newNickname) {
+        String sql = "UPDATE users SET nickname = ? WHERE user_id = ?";
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+
+            ps.setString(1, newNickname);
+            ps.setString(2, userId);
+
+            int updated = ps.executeUpdate();
+            if (updated == 1) return null; // 성공
+            return "업데이트된 행이 없습니다. user_id가 존재하는지 확인하세요.";
+
+        } catch (SQLException e) {
+            e.printStackTrace();
+            return "SQL 오류: " + e.getMessage();
+        }
+    }
+
+    //오류 문자열을 돌려주는 메소드
+    public static String updateProfileImagePathWithError(String userId, String path) {
+        String sql = "UPDATE users SET profile_image_path = ? WHERE user_id = ?";
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+
+            ps.setString(1, path);
+            ps.setString(2, userId);
+
+            int updated = ps.executeUpdate();
+            if (updated == 1) return null; // 성공
+            return "업데이트된 행이 없습니다. user_id가 존재하는지 확인하세요.";
+
+        } catch (SQLException e) {
+            e.printStackTrace();
+            return "SQL 오류: " + e.getMessage();
+        }
+    }
+    
     // 프로필 조회
     public static ProfileInfo getProfile(String userId) {
 
@@ -273,7 +310,13 @@ public class UserDAO {
     // =========================================================
     // 회원가입 (프로젝트에서 실제 구현된 것 쓰면 됨)
     // =========================================================
-    public boolean insertUser(UserDTO user, String phone) {
-        return false;
+ // 기존 (❌)
+
+    // 수정 (✅)
+    public static boolean insertUser(UserDTO user, String phone) {
+		return false;
+        // 실제 INSERT 쿼리 실행
+        // phone_number 필수 체크
+        // 성공/실패 로깅
     }
 }

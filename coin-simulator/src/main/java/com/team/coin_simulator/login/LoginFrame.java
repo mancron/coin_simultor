@@ -128,7 +128,11 @@ public class LoginFrame extends JFrame {
             UserDTO user = UserDAO.loginCheck(userId, password);
             if (user != null) {
                 JOptionPane.showMessageDialog(this, user.getNickname() + "님, 환영합니다!");
-                SwingUtilities.invokeLater(() -> new MainFrame(user.getUserId()));
+
+                String cleanUserId = (user.getUserId() == null) ? "" : user.getUserId().trim();
+                System.out.println("🔥 LoginFrame cleanUserId = [" + cleanUserId + "]");
+
+                SwingUtilities.invokeLater(() -> new MainFrame(cleanUserId));
                 dispose();
             } else {
                 JOptionPane.showMessageDialog(this,
