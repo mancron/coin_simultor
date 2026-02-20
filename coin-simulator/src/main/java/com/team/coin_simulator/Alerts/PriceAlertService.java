@@ -35,6 +35,8 @@ public class PriceAlertService implements UpbitWebSocketDao.TickerListener {
 
         // 2. 백그라운드 스레드에서 DB 조회 (메인 화면 버벅임 방지 - 기획안 1.2 비동기 처리 적용)
         new Thread(() -> checkPriceAlerts(symbol, currentPrice)).start();
+        //급등락 로직
+        checkVolatility(symbol, currentPrice);
     }
 
     private void checkPriceAlerts(String market, BigDecimal currentPrice) {
@@ -91,7 +93,7 @@ public class PriceAlertService implements UpbitWebSocketDao.TickerListener {
      // 1. 현재 가격 추가
      history.add(currentPrice);
      
-     // 2. 데이터 개수 체크 (테스트 할 때는 180 대신 5로 줄여서 하세요!)
+     // 2. 데이터 개수 체크
      if (history.size() > 180) {
          BigDecimal oldPrice = history.poll(); // n초 전 가격 꺼내기
          
@@ -100,7 +102,8 @@ public class PriceAlertService implements UpbitWebSocketDao.TickerListener {
 
          // 3. 급등락 계산
          BigDecimal diff = currentPrice.subtract(oldPrice);
-         BigDecimal rate = diff.divide(oldPrice, 4, RoundingMode.HALF_UP).multiply(new BigDecimal(100));
+         BigDecimal rate = diff.multiply(new BigDecimal("100"))
+                 .divide(oldPrice, 6, RoundingMode.HALF_UP);
          
          // 4. 절대값이 3% 이상이면 알림 발송
          if (rate.abs().compareTo(new BigDecimal("3.0")) >= 0) {
