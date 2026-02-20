@@ -239,7 +239,19 @@ public class OrderDAO {
             }
 
             conn.commit();
-            System.out.println(">> [DB] 시장가 체결 완료 (성공!)");
+            System.out.println(">> [DB] 시장가 체결 완료");
+            
+         // 알림 발송
+            String sideKr = order.getSide().equals("BID") ? "매수" : "매도";
+            // 시장가는 100% 체결이므로 "최종 체결" 메시지 구성
+            String alertMsg = String.format("✅ [%s] %s 주문이 최종 체결되었습니다. (단가: %,.0f)", 
+                                            "비트코인", sideKr, tradePrice);
+            
+            // 메인 프레임이나 알림 센터로 이벤트 전달 (임시로 콘솔이나 Toast 호출)
+            // 실제 적용 시 MainFrame.getInstance() 등을 통해 화면에 Toast를 띄움
+            // NotificationUtil.showToast(mainFrame, alertMsg);
+            System.out.println(alertMsg);
+
             return true;
 
         } catch (SQLException e) {

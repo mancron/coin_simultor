@@ -3,6 +3,7 @@ package com.team.coin_simulator;
 import javax.swing.*;
 import java.awt.*;
 import com.team.coin_simulator.Market_Panel.HistoryPanel;
+import com.team.coin_simulator.Alerts.PriceAlertService;
 import com.team.coin_simulator.Market_Order.OrderPanel;
 import com.team.coin_simulator.chart.CandleChartPanel;
 import com.team.coin_simulator.orderbook.OrderBookPanel;
@@ -14,7 +15,7 @@ import Investment_details.Investment_details_MainPanel;
  * 
  * 화면 구성:
  * 1. 거래 화면 (Trading View): 코인목록 + 차트 + 호가창 + 주문
- * 2. 투자내역 화면 (Investment View): 보유자산/투자손익/거래내역/미체결
+ * 2. 투자내역 화면 (Investment View): 보유자산/투자손익/거래내역/미결
  * 
  * 상단 버튼으로 두 화면 전환
  */
@@ -49,8 +50,10 @@ public class MainFrame extends JFrame implements TimeController.TimeChangeListen
     // 카드 식별자
     private static final String CARD_TRADING = "TRADING";
     private static final String CARD_INVESTMENT = "INVESTMENT";
+  
+    //알림 감시자
+    private PriceAlertService alertService;
 
-    
     public MainFrame(String userId) {
         super("가상화폐 모의투자 시스템");
         this.currentUserId = userId;
@@ -65,6 +68,9 @@ public class MainFrame extends JFrame implements TimeController.TimeChangeListen
         
         initComponents();
         initWebSocket();
+        
+        // 알림 서비스 (프레임 정보를 넘겨줌)
+        alertService = new PriceAlertService(this);
         
         setVisible(true);
     }
