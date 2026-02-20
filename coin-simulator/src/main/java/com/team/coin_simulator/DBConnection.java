@@ -4,6 +4,7 @@ import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import java.sql.Connection;
 import java.sql.SQLException;
+import io.github.cdimascio.dotenv.Dotenv;
 
 public class DBConnection {
 
@@ -15,9 +16,12 @@ public class DBConnection {
             HikariConfig config = new HikariConfig();
             
             // 1. 필수 설정
-            config.setJdbcUrl("jdbc:mysql://localhost:3306/coin_simulator?characterEncoding=UTF-8&serverTimezone=UTC");
-            config.setUsername("root");
-            config.setPassword("1234");
+            Dotenv dotenv = Dotenv.load();
+
+	         // 2. config 설정에 환경 변수 적용하기
+	        config.setJdbcUrl(dotenv.get("DB_URL"));
+	        config.setUsername(dotenv.get("DB_USER"));
+	        config.setPassword(dotenv.get("DB_PASSWORD"));
             config.setDriverClassName("com.mysql.cj.jdbc.Driver");
 
             // 2. 성능 및 풀 옵션 (데스크탑/시뮬레이터 환경 최적화)

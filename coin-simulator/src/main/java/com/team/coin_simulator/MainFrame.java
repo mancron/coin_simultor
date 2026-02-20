@@ -5,12 +5,14 @@ import DAO.UserDAO;
 import Investment_details.Investment_details_MainPanel;
 
 import com.team.coin_simulator.Market_Panel.HistoryPanel;
+import com.team.coin_simulator.Alerts.PriceAlertService;
 import com.team.coin_simulator.Market_Order.OrderPanel;
 import com.team.coin_simulator.chart.CandleChartPanel;
 import com.team.coin_simulator.orderbook.OrderBookPanel;
 import com.team.coin_simulator.login.ChangePasswordFrame;
 import com.team.coin_simulator.login.LoginFrame;
 
+<<<<<<< HEAD
 import javax.imageio.ImageIO;
 import javax.swing.*;
 import java.awt.*;
@@ -23,6 +25,17 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
+=======
+/**
+ * 메인 프레임 - 전체 화면 전환 방식
+ * 
+ * 화면 구성:
+ * 1. 거래 화면 (Trading View): 코인목록 + 차트 + 호가창 + 주문
+ * 2. 투자내역 화면 (Investment View): 보유자산/투자손익/거래내역/미결
+ * 
+ * 상단 버튼으로 두 화면 전환
+ */
+>>>>>>> refs/heads/master
 
 public class MainFrame extends JFrame implements TimeController.TimeChangeListener {
 
@@ -78,12 +91,30 @@ public class MainFrame extends JFrame implements TimeController.TimeChangeListen
     // =========================
     private TimeController timeController;
 
+<<<<<<< HEAD
+=======
+    private String currentUserId = "test_user"; // 로그인 시스템 구현 전 임시 사용자
+    private boolean isTradingView = true; // true: 거래화면, false: 투자내역
+    
+    // 카드 식별자
+    private static final String CARD_TRADING = "TRADING";
+    private static final String CARD_INVESTMENT = "INVESTMENT";
+  
+    //알림 감시자
+    private PriceAlertService alertService;
+
+>>>>>>> refs/heads/master
     public MainFrame(String userId) {
         super("가상화폐 모의투자 시스템");
+<<<<<<< HEAD
         this.currentUserId = (userId == null) ? "" : userId.trim();
         System.out.println("🔥 currentUserId = [" + this.currentUserId + "]");
 
         // TimeController 초기화
+=======
+        this.currentUserId = userId;
+        
+>>>>>>> refs/heads/master
         timeController = TimeController.getInstance();
         timeController.initialize(currentUserId);
         timeController.addTimeChangeListener(this);
@@ -101,7 +132,14 @@ public class MainFrame extends JFrame implements TimeController.TimeChangeListen
 
         // 웹소켓
         initWebSocket();
+<<<<<<< HEAD
 
+=======
+        
+        // 알림 서비스 (프레임 정보를 넘겨줌)
+        alertService = new PriceAlertService(this);
+        
+>>>>>>> refs/heads/master
         setVisible(true);
     }
 
@@ -403,8 +441,14 @@ public class MainFrame extends JFrame implements TimeController.TimeChangeListen
     private JPanel createTradingPanel() {
         JPanel panel = new JPanel(new BorderLayout());
         panel.setBackground(Color.WHITE);
+<<<<<<< HEAD
 
         historyPanel = new HistoryPanel();
+=======
+        
+        // 왼쪽: 코인 목록
+        historyPanel = new HistoryPanel(currentUserId);
+>>>>>>> refs/heads/master
         historyPanel.setPreferredSize(new Dimension(350, 0));
         historyPanel.addCoinSelectionListener(this::onCoinSelected);
 
@@ -420,7 +464,12 @@ public class MainFrame extends JFrame implements TimeController.TimeChangeListen
         centerArea.add(chartPanel, BorderLayout.CENTER);
         centerArea.add(orderBookPanel, BorderLayout.SOUTH);
 
+<<<<<<< HEAD
         orderPanel = new OrderPanel();
+=======
+        // 오른쪽: 주문 패널
+        orderPanel = new OrderPanel(currentUserId);
+>>>>>>> refs/heads/master
         orderPanel.setPreferredSize(new Dimension(350, 0));
 
         panel.add(historyPanel, BorderLayout.WEST);
@@ -517,6 +566,18 @@ public class MainFrame extends JFrame implements TimeController.TimeChangeListen
 
     // 테스트용 main (실제 실행은 LoginFrame.main 사용 추천)
     public static void main(String[] args) {
+<<<<<<< HEAD
         SwingUtilities.invokeLater(() -> new MainFrame("test@onbit.com"));
+=======
+        try {
+            UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        
+        SwingUtilities.invokeLater(() -> {
+            new MainFrame("user_01");
+        });
+>>>>>>> refs/heads/master
     }
 }

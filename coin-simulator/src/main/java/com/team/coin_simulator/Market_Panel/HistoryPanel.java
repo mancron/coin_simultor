@@ -35,7 +35,7 @@ import okhttp3.Request;
 
 public class HistoryPanel extends JPanel implements UpbitWebSocketDao.TickerListener {
 	
-	String loginUser = "user_01";
+	String loginUser = "test_user1";
     
     // UI 컴포넌트 선언
     JPanel coinHeadPanel, tabPanel;
@@ -86,7 +86,8 @@ public class HistoryPanel extends JPanel implements UpbitWebSocketDao.TickerList
         }
     }
     
-    public HistoryPanel() {
+    public HistoryPanel(String loginUser) {
+    	this.loginUser = loginUser;
         setLayout(new BorderLayout());
         setBackground(Color.WHITE);
         setMinimumSize(new Dimension(300, 500));
@@ -385,18 +386,18 @@ public class HistoryPanel extends JPanel implements UpbitWebSocketDao.TickerList
         });
     }
     
-    public static void main(String[] args) {
-        JFrame frame = new JFrame("코인 리스트 판넬");
-        frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        
-        HistoryPanel historyPanel = new HistoryPanel();
-        frame.add(historyPanel);
-        
-        frame.pack();
-        frame.setMinimumSize(historyPanel.getMinimumSize()); 
-        frame.setSize(400, 600);
-        frame.setVisible(true);
-        UpbitWebSocketDao.getInstance().start();
-
-    }
+//    public static void main(String[] args) {
+//        JFrame frame = new JFrame("코인 리스트 판넬");
+//        frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+//        
+//        HistoryPanel historyPanel = new HistoryPanel();
+//        frame.add(historyPanel);
+//        
+//        frame.pack();
+//        frame.setMinimumSize(historyPanel.getMinimumSize()); 
+//        frame.setSize(400, 600);
+//        frame.setVisible(true);
+//        UpbitWebSocketDao.getInstance().start();
+//
+//    }
 }
