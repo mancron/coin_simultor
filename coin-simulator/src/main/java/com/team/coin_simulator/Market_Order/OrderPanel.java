@@ -27,6 +27,8 @@ public class OrderPanel extends JPanel implements UpbitWebSocketDao.TickerListen
     private JLabel lblSelectedCoinInfo; 
     private JLabel lblMarketUnit;     
 
+    private String userId;
+    
     private JLabel valExpected; // 예상 체결 수량/금액 표시 라벨
     private String selectedCoinCode = "BTC"; // 기본값
     private BigDecimal currentSelectedPrice = BigDecimal.ZERO; // HistoryPanel에서 받은 현재가 저장
@@ -35,8 +37,11 @@ public class OrderPanel extends JPanel implements UpbitWebSocketDao.TickerListen
 
     private final Color COLOR_BID = new Color(200, 30, 30);
     private final Color COLOR_ASK = new Color(30, 70, 200);
-
-    public OrderPanel() {
+    
+    
+    public OrderPanel(String userId) {
+    	this.userId = userId;
+    	
         // 1. 초기 데이터 및 배경 설정
         mockBalance.put("KRW", new BigDecimal("100000000")); // 테스트용 1억 세팅
         mockBalance.put("BTC", new BigDecimal("0.5"));
@@ -406,7 +411,7 @@ public class OrderPanel extends JPanel implements UpbitWebSocketDao.TickerListen
                 marketOrder.setStatus("DONE");
 
                 boolean isSuccess = orderDAO.executeMarketOrder(
-                    marketOrder, "test_user", currentSelectedPrice, buyQty, inputVal
+                    marketOrder, "this.userId", currentSelectedPrice, buyQty, inputVal
                 );
 
                 if (isSuccess) {
@@ -432,7 +437,7 @@ public class OrderPanel extends JPanel implements UpbitWebSocketDao.TickerListen
                 marketOrder.setStatus("DONE");
 
                 boolean isSuccess = orderDAO.executeMarketOrder(
-                    marketOrder, "test_user", currentSelectedPrice, inputVal, sellTotalKRW
+                    marketOrder, "this.userId", currentSelectedPrice, inputVal, sellTotalKRW
                 );
 
                 if (isSuccess) {
@@ -461,7 +466,7 @@ public class OrderPanel extends JPanel implements UpbitWebSocketDao.TickerListen
         String curr = order.getSide().equals("BID") ? "KRW" : selectedCoinCode;
         BigDecimal lockedAmt = order.getSide().equals("BID") ? order.getOriginalPrice().multiply(order.getOriginalVolume()) : order.getOriginalVolume();
 
-        boolean isDBSuccess = orderDAO.cancelOrder(order.getOrderId(), "test_user", order.getSide(), lockedAmt);
+        boolean isDBSuccess = orderDAO.cancelOrder(order.getOrderId(), "this.userId", order.getSide(), lockedAmt);
         
         if (isDBSuccess) {
             mockLocked.put(curr, mockLocked.get(curr).subtract(lockedAmt));
@@ -509,7 +514,7 @@ public class OrderPanel extends JPanel implements UpbitWebSocketDao.TickerListen
                 }
 
                 boolean isDBSuccess = orderDAO.modifyOrder(
-                        order.getOrderId(), "test_user", order.getSide(), oldLockedAmt, newRequiredAmt, newPrice, newQty
+                        order.getOrderId(), "this.userId", order.getSide(), oldLockedAmt, newRequiredAmt, newPrice, newQty
                 );
 
                 if (isDBSuccess) {
@@ -614,16 +619,5 @@ public class OrderPanel extends JPanel implements UpbitWebSocketDao.TickerListen
     private void styleField(JTextField tf) {
         tf.setMaximumSize(new Dimension(Integer.MAX_VALUE, 40));
         tf.setHorizontalAlignment(JTextField.RIGHT);
-    }
-
-    public static void main(String[] args) {
-        SwingUtilities.invokeLater(() -> {
-            JFrame frame = new JFrame("주문 시스템");
-            frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-            frame.add(new OrderPanel());
-            frame.pack();
-            frame.setLocationRelativeTo(null);
-            frame.setVisible(true);
-        });
     }
 }

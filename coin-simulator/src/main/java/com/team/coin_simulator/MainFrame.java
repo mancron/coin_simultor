@@ -162,9 +162,9 @@ public class MainFrame extends JFrame implements TimeController.TimeChangeListen
         
         centerArea.add(chartPanel, BorderLayout.CENTER);
         centerArea.add(orderBookPanel, BorderLayout.SOUTH);
-        
+
         // 오른쪽: 주문 패널
-        orderPanel = new OrderPanel();
+        orderPanel = new OrderPanel(currentUserId);
         orderPanel.setPreferredSize(new Dimension(350, 0));
         
         // 조립
