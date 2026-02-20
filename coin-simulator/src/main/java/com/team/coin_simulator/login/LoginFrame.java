@@ -128,7 +128,7 @@ public class LoginFrame extends JFrame {
             UserDTO user = UserDAO.loginCheck(userId, password);
             if (user != null) {
                 JOptionPane.showMessageDialog(this, user.getNickname() + "님, 환영합니다!");
-                SwingUtilities.invokeLater(MainFrame::new);
+                SwingUtilities.invokeLater(() -> new MainFrame(user.getUserId()));
                 dispose();
             } else {
                 JOptionPane.showMessageDialog(this,
@@ -193,11 +193,13 @@ public class LoginFrame extends JFrame {
         findPwLabel.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
+
                 String inputId = JOptionPane.showInputDialog(LoginFrame.this,
                         "아이디(이메일)를 입력해주세요.",
                         "비밀번호 찾기",
                         JOptionPane.QUESTION_MESSAGE);
                 if (inputId == null) return;
+
                 String userId = inputId.trim();
                 if (userId.isEmpty()) return;
 
@@ -206,10 +208,11 @@ public class LoginFrame extends JFrame {
                         "비밀번호 찾기",
                         JOptionPane.QUESTION_MESSAGE);
                 if (inputPhone == null) return;
+
                 String phone = inputPhone.trim().replaceAll("[^0-9]", "");
                 if (phone.isEmpty()) return;
 
-                // 아이디+휴대폰 일치 확인
+                // 1) 아이디+전화번호 일치 확인
                 if (!UserDAO.verifyUserByIdAndPhone(userId, phone)) {
                     JOptionPane.showMessageDialog(LoginFrame.this,
                             "등록되지 않았거나 정보가 일치하지 않습니다.",
@@ -218,28 +221,23 @@ public class LoginFrame extends JFrame {
                     return;
                 }
 
-                // 임시 비밀번호 생성
+                // 2) 임시 비밀번호 생성
                 String tempPw = UserDAO.generateTempPassword(10);
 
-                // DB 업데이트 (연습용: 평문 저장. 실서비스면 반드시 해시)
+                // 3) DB 비밀번호를 임시 비밀번호로 재설정
                 boolean ok = UserDAO.updatePassword(userId, tempPw);
                 if (!ok) {
                     JOptionPane.showMessageDialog(LoginFrame.this,
-                            "비밀번호 재설정에 실패했습니다.",
+                            "임시 비밀번호 발급(재설정)에 실패했습니다.",
                             "오류",
                             JOptionPane.ERROR_MESSAGE);
                     return;
                 }
 
-                // 화면에는 마스킹해서 출력
-                String maskedPw = maskPassword(tempPw);
-
-             // 화면에는 복사 가능한 팝업으로 보여주기 (마스킹 X)
+                // 4) 팝업: 임시 비밀번호 표시 + 복사 버튼
                 showTempPasswordDialog(tempPw);
-
             }
         });
-
         linkPanel.add(findIdLabel);
         JLabel separator = new JLabel("|");
         separator.setForeground(Color.LIGHT_GRAY);
@@ -345,6 +343,6 @@ public class LoginFrame extends JFrame {
     }
 
     public static void main(String[] args) {
-        SwingUtilities.invokeLater(LoginFrame::new);
+    	SwingUtilities.invokeLater(LoginFrame::new);
     }
 }

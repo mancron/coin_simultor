@@ -78,4 +78,9 @@ public class UserDTO implements Serializable {
 		// TODO Auto-generated method stub
 		
 	}
+
+	public void setProfileImagePath(String string) {
+		// TODO Auto-generated method stub
+		
+	}
 }

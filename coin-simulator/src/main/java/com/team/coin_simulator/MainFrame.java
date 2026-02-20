@@ -9,20 +9,12 @@ import com.team.coin_simulator.chart.CandleChartPanel;
 import com.team.coin_simulator.orderbook.OrderBookPanel;
 
 import DAO.UpbitWebSocketDao;
+import DAO.UserDAO;
 import Investment_details.Investment_details_MainPanel;
 
-// ✅ 추가: 비밀번호 변경 프레임 import
 import com.team.coin_simulator.login.ChangePasswordFrame;
+import com.team.coin_simulator.login.LoginFrame;
 
-/**
- * 메인 프레임 - 전체 화면 전환 방식
- *
- * 화면 구성:
- * 1. 거래 화면 (Trading View): 코인목록 + 차트 + 호가창 + 주문
- * 2. 투자내역 화면 (Investment View): 보유자산/투자손익/거래내역/미체결
- *
- * 상단 버튼으로 두 화면 전환
- */
 public class MainFrame extends JFrame implements TimeController.TimeChangeListener {
 
     // 상단 패널
@@ -30,8 +22,8 @@ public class MainFrame extends JFrame implements TimeController.TimeChangeListen
     private TimeControlPanel timeControlPanel;
     private JButton btnToggleView;
 
-    // ✅ 추가: 비밀번호 변경 버튼
-    private JButton btnChangePassword;
+    // ✅ 프로필 UI
+    private JLabel profileIconLabel;
 
     // 메인 컨텐츠 (CardLayout)
     private CardLayout mainCardLayout;
@@ -50,15 +42,21 @@ public class MainFrame extends JFrame implements TimeController.TimeChangeListen
     // 상태 관리
     private TimeController timeController;
 
-    private String currentUserId = "jjh153702@naver.com"; // 로그인 시스템 구현 전 임시 사용자
-    private boolean isTradingView = true; // true: 거래화면, false: 투자내역
+    // ✅ 로그인 유저
+    private final String currentUserId;
+    private String currentNickname;
+    private String currentProfileImagePath;
 
-    // 카드 식별자
+    private boolean isTradingView = true;
+
     private static final String CARD_TRADING = "TRADING";
     private static final String CARD_INVESTMENT = "INVESTMENT";
 
-    public MainFrame() {
+    // ✅ 변경: userId를 생성자에서 받는다
+    public MainFrame(String userId) {
         super("가상화폐 모의투자 시스템");
+
+        this.currentUserId = userId;
 
         timeController = TimeController.getInstance();
         timeController.initialize(currentUserId);
@@ -67,6 +65,9 @@ public class MainFrame extends JFrame implements TimeController.TimeChangeListen
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setSize(1600, 900);
         setLocationRelativeTo(null);
+
+        // 프로필 먼저 로드
+        loadProfileFromDb();
 
         initComponents();
         initWebSocket();
@@ -77,69 +78,35 @@ public class MainFrame extends JFrame implements TimeController.TimeChangeListen
     private void initComponents() {
         setLayout(new BorderLayout());
 
-        // 1. 상단 패널 (시간 제어 + 화면 전환 버튼)
         topPanel = createTopPanel();
         add(topPanel, BorderLayout.NORTH);
 
-        // 2. 메인 컨텐츠 영역 (CardLayout으로 화면 전환)
         mainCardLayout = new CardLayout();
         mainContentPanel = new JPanel(mainCardLayout);
 
-        // 2-1. 거래 화면 생성
         tradingPanel = createTradingPanel();
-
-        // 2-2. 투자내역 화면 생성
         investmentPanel = new Investment_details_MainPanel(currentUserId);
 
-        // 카드에 추가
         mainContentPanel.add(tradingPanel, CARD_TRADING);
         mainContentPanel.add(investmentPanel, CARD_INVESTMENT);
 
         add(mainContentPanel, BorderLayout.CENTER);
 
-        // 기본 화면: 거래 화면
         mainCardLayout.show(mainContentPanel, CARD_TRADING);
     }
 
-    /**
-     * 상단 패널 생성 (시간 제어 + 화면 전환 버튼 + 비밀번호 변경)
-     */
     private JPanel createTopPanel() {
         JPanel panel = new JPanel(new BorderLayout());
         panel.setBackground(Color.WHITE);
 
-        // 왼쪽: 시간 제어 패널
         timeControlPanel = new TimeControlPanel();
         panel.add(timeControlPanel, BorderLayout.CENTER);
 
-        // 오른쪽: 버튼들
-        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 15, 10));
-        buttonPanel.setBackground(Color.WHITE);
+        // ✅ 오른쪽: [투자내역 보기 버튼] + [프로필 아이콘]
+        JPanel rightPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 12, 10));
+        rightPanel.setBackground(Color.WHITE);
 
-        // ✅ 1) 비밀번호 변경 버튼
-        btnChangePassword = new JButton("비밀번호 변경");
-        btnChangePassword.setFont(new Font("맑은 고딕", Font.BOLD, 13));
-        btnChangePassword.setForeground(Color.WHITE);
-        btnChangePassword.setBackground(new Color(155, 89, 182)); // 보라색 계열
-        btnChangePassword.setFocusPainted(false);
-        btnChangePassword.setBorderPainted(false);
-        btnChangePassword.setPreferredSize(new Dimension(150, 35));
-        btnChangePassword.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-
-        // 호버 효과
-        btnChangePassword.addMouseListener(new java.awt.event.MouseAdapter() {
-            public void mouseEntered(java.awt.event.MouseEvent evt) {
-                btnChangePassword.setBackground(new Color(142, 68, 173));
-            }
-            public void mouseExited(java.awt.event.MouseEvent evt) {
-                btnChangePassword.setBackground(new Color(155, 89, 182));
-            }
-        });
-
-        // 클릭 시 비밀번호 변경 프레임 열기
-        btnChangePassword.addActionListener(e -> openChangePassword());
-
-        // ✅ 2) 화면 전환 버튼(기존)
+        // 투자내역 보기 버튼(기존 유지)
         btnToggleView = new JButton("투자내역 보기");
         btnToggleView.setFont(new Font("맑은 고딕", Font.BOLD, 13));
         btnToggleView.setForeground(Color.WHITE);
@@ -149,7 +116,6 @@ public class MainFrame extends JFrame implements TimeController.TimeChangeListen
         btnToggleView.setPreferredSize(new Dimension(150, 35));
         btnToggleView.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 
-        // 호버 효과
         btnToggleView.addMouseListener(new java.awt.event.MouseAdapter() {
             public void mouseEntered(java.awt.event.MouseEvent evt) {
                 btnToggleView.setBackground(new Color(41, 128, 185));
@@ -158,40 +124,141 @@ public class MainFrame extends JFrame implements TimeController.TimeChangeListen
                 btnToggleView.setBackground(new Color(52, 152, 219));
             }
         });
-
         btnToggleView.addActionListener(e -> toggleView());
 
-        // 버튼 추가 순서: 비밀번호 변경 -> 화면전환
-        buttonPanel.add(btnChangePassword);
-        buttonPanel.add(btnToggleView);
+        rightPanel.add(btnToggleView);
 
-        panel.add(buttonPanel, BorderLayout.EAST);
+        // ✅ 프로필 아이콘(사람모양 느낌: 기본 아이콘 사용, 사진 있으면 사진 표시)
+        profileIconLabel = new JLabel();
+        profileIconLabel.setPreferredSize(new Dimension(34, 34));
+        profileIconLabel.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        setProfileIcon(currentProfileImagePath);
 
+        profileIconLabel.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override
+            public void mouseClicked(java.awt.event.MouseEvent e) {
+                showProfileMenu(profileIconLabel, 0, profileIconLabel.getHeight());
+            }
+        });
+
+        rightPanel.add(profileIconLabel);
+
+        panel.add(rightPanel, BorderLayout.EAST);
         return panel;
     }
 
-    // ✅ 비밀번호 변경 창 열기
-    private void openChangePassword() {
-        if (currentUserId == null || currentUserId.isBlank()) {
-            JOptionPane.showMessageDialog(this, "로그인 정보가 없습니다.", "오류", JOptionPane.ERROR_MESSAGE);
+    // -----------------------------
+    // 프로필: DB 로드 / 아이콘 적용 / 메뉴
+    // -----------------------------
+    private void loadProfileFromDb() {
+        UserDAO.ProfileInfo info = UserDAO.getProfile(currentUserId);
+        if (info != null) {
+            currentNickname = info.nickname;
+            currentProfileImagePath = info.imagePath;
+        }
+    }
+
+    private void setProfileIcon(String path) {
+        try {
+            if (path == null || path.isBlank()) {
+                // 기본 사람 아이콘 느낌(대체 아이콘)
+                profileIconLabel.setIcon(UIManager.getIcon("OptionPane.informationIcon"));
+                return;
+            }
+            ImageIcon icon = new ImageIcon(path);
+            Image img = icon.getImage().getScaledInstance(34, 34, Image.SCALE_SMOOTH);
+            profileIconLabel.setIcon(new ImageIcon(img));
+        } catch (Exception ex) {
+            profileIconLabel.setIcon(UIManager.getIcon("OptionPane.warningIcon"));
+        }
+    }
+
+    private void showProfileMenu(Component comp, int x, int y) {
+        JPopupMenu menu = new JPopupMenu();
+
+        String nick = (currentNickname == null || currentNickname.isBlank()) ? "(닉네임 없음)" : currentNickname;
+
+        JMenuItem info = new JMenuItem("ID: " + currentUserId + " / " + nick);
+        info.setEnabled(false);
+        menu.add(info);
+        menu.addSeparator();
+
+        JMenuItem editNick = new JMenuItem("닉네임 변경");
+        editNick.addActionListener(e -> changeNickname());
+        menu.add(editNick);
+
+        JMenuItem uploadPhoto = new JMenuItem("사진 등록/변경");
+        uploadPhoto.addActionListener(e -> changeProfilePhoto());
+        menu.add(uploadPhoto);
+
+        menu.addSeparator();
+
+        JMenuItem changePw = new JMenuItem("비밀번호 변경");
+        changePw.addActionListener(e -> openChangePassword());
+        menu.add(changePw);
+
+        JMenuItem logout = new JMenuItem("로그아웃");
+        logout.addActionListener(e -> {
+            dispose();
+            new LoginFrame();
+        });
+        menu.addSeparator();
+        menu.add(logout);
+
+        menu.show(comp, x, y);
+    }
+
+    private void changeNickname() {
+        String input = JOptionPane.showInputDialog(this, "새 닉네임을 입력하세요.", currentNickname == null ? "" : currentNickname);
+        if (input == null) return;
+
+        String newNick = input.trim();
+        if (newNick.isEmpty()) return;
+
+        boolean ok = UserDAO.updateNickname(currentUserId, newNick);
+        if (!ok) {
+            JOptionPane.showMessageDialog(this, "닉네임 변경 실패", "오류", JOptionPane.ERROR_MESSAGE);
             return;
         }
+
+        currentNickname = newNick;
+        JOptionPane.showMessageDialog(this, "닉네임이 변경되었습니다.");
+    }
+
+    private void changeProfilePhoto() {
+        JFileChooser chooser = new JFileChooser();
+        chooser.setDialogTitle("프로필 사진 선택");
+        int res = chooser.showOpenDialog(this);
+        if (res != JFileChooser.APPROVE_OPTION) return;
+
+        String path = chooser.getSelectedFile().getAbsolutePath();
+
+        boolean ok = UserDAO.updateProfileImagePath(currentUserId, path);
+        if (!ok) {
+            JOptionPane.showMessageDialog(this, "프로필 사진 저장 실패", "오류", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        currentProfileImagePath = path;
+        setProfileIcon(currentProfileImagePath);
+        JOptionPane.showMessageDialog(this, "프로필 사진이 변경되었습니다.");
+    }
+
+    private void openChangePassword() {
         new ChangePasswordFrame(currentUserId);
     }
 
-    /**
-     * 거래 화면 생성
-     */
+    // -----------------------------
+    // 기존 기능들
+    // -----------------------------
     private JPanel createTradingPanel() {
         JPanel panel = new JPanel(new BorderLayout());
         panel.setBackground(Color.WHITE);
 
-        // 왼쪽: 코인 목록
         historyPanel = new HistoryPanel();
         historyPanel.setPreferredSize(new Dimension(350, 0));
         historyPanel.addCoinSelectionListener(this::onCoinSelected);
 
-        // 중앙: 차트 + 호가창
         JPanel centerArea = new JPanel(new BorderLayout());
 
         chartPanel = new CandleChartPanel("BTC 차트");
@@ -204,11 +271,9 @@ public class MainFrame extends JFrame implements TimeController.TimeChangeListen
         centerArea.add(chartPanel, BorderLayout.CENTER);
         centerArea.add(orderBookPanel, BorderLayout.SOUTH);
 
-        // 오른쪽: 주문 패널
         orderPanel = new OrderPanel();
         orderPanel.setPreferredSize(new Dimension(350, 0));
 
-        // 조립
         panel.add(historyPanel, BorderLayout.WEST);
         panel.add(centerArea, BorderLayout.CENTER);
         panel.add(orderPanel, BorderLayout.EAST);
@@ -216,54 +281,34 @@ public class MainFrame extends JFrame implements TimeController.TimeChangeListen
         return panel;
     }
 
-    /**
-     * 화면 전환 (거래 화면 ↔ 투자내역 화면)
-     */
     private void toggleView() {
         isTradingView = !isTradingView;
 
         if (isTradingView) {
-            // 거래 화면으로 전환
             mainCardLayout.show(mainContentPanel, CARD_TRADING);
             btnToggleView.setText("투자내역 보기");
             btnToggleView.setBackground(new Color(52, 152, 219));
-
         } else {
-            // 투자내역 화면으로 전환
             mainCardLayout.show(mainContentPanel, CARD_INVESTMENT);
             btnToggleView.setText("거래화면 보기");
             btnToggleView.setBackground(new Color(46, 204, 113));
-
-            // 투자내역 데이터 새로고침
             investmentPanel.refreshAll();
         }
     }
 
-    /**
-     * 코인 선택 이벤트 핸들러
-     */
     private void onCoinSelected(String coinSymbol) {
-        if (coinSymbol == null || coinSymbol.isEmpty()) {
-            return;
-        }
+        if (coinSymbol == null || coinSymbol.isEmpty()) return;
 
         System.out.println("[MainFrame] 코인 선택됨: " + coinSymbol);
 
-        // 차트 업데이트
         chartPanel.changeMarket(coinSymbol);
-
-        // 호가창 업데이트
         updateOrderBookPanel(coinSymbol);
 
-        // 주문 패널에도 알려주기
         if (orderPanel != null) {
             orderPanel.setSelectedCoin(coinSymbol);
         }
     }
 
-    /**
-     * 호가창 패널 업데이트
-     */
     private void updateOrderBookPanel(String coinSymbol) {
         if (orderBookPanel != null) {
             orderBookPanel.closeConnection();
@@ -271,31 +316,22 @@ public class MainFrame extends JFrame implements TimeController.TimeChangeListen
 
         orderBookPanel = new OrderBookPanel(coinSymbol);
         orderBookPanel.setPreferredSize(new Dimension(0, 350));
-        orderBookPanel.setBorder(BorderFactory.createTitledBorder(
-                coinSymbol + " 호가창"
-        ));
+        orderBookPanel.setBorder(BorderFactory.createTitledBorder(coinSymbol + " 호가창"));
 
-        // tradingPanel의 centerArea 찾아서 업데이트
         JPanel centerArea = (JPanel) ((JPanel) tradingPanel.getComponent(1));
-        centerArea.remove(1); // 기존 호가창 제거
+        centerArea.remove(1);
         centerArea.add(orderBookPanel, BorderLayout.SOUTH);
 
         centerArea.revalidate();
         centerArea.repaint();
     }
 
-    /**
-     * 웹소켓 초기화
-     */
     private void initWebSocket() {
         if (timeController.isRealtimeMode()) {
             UpbitWebSocketDao.getInstance().start();
         }
     }
 
-    /**
-     * 시간 변경 이벤트 처리
-     */
     @Override
     public void onTimeChanged(java.time.LocalDateTime newTime, boolean isRealtime) {
         SwingUtilities.invokeLater(() -> {
@@ -310,29 +346,20 @@ public class MainFrame extends JFrame implements TimeController.TimeChangeListen
         });
     }
 
-    /**
-     * 과거 데이터 로드
-     */
     private void loadHistoricalData(java.time.LocalDateTime targetTime) {
         System.out.println("[MainFrame] 과거 데이터 로드 중: " + targetTime);
         chartPanel.loadHistoricalData(targetTime);
     }
 
-    /**
-     * 리소스 정리
-     */
     @Override
     public void dispose() {
         UpbitWebSocketDao.getInstance().close();
-
-        if (orderBookPanel != null) {
-            orderBookPanel.closeConnection();
-        }
-
+        if (orderBookPanel != null) orderBookPanel.closeConnection();
         DBConnection.close();
         super.dispose();
     }
 
+    // 테스트용 main
     public static void main(String[] args) {
         try {
             UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
@@ -340,8 +367,6 @@ public class MainFrame extends JFrame implements TimeController.TimeChangeListen
             e.printStackTrace();
         }
 
-        SwingUtilities.invokeLater(() -> {
-            new MainFrame();
-        });
+        SwingUtilities.invokeLater(() -> new MainFrame("test@onbit.com"));
     }
 }
