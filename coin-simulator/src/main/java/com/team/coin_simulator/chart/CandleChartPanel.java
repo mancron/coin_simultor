@@ -256,8 +256,7 @@ public class CandleChartPanel extends JPanel {
         List<CandleDTO> resampled = resampleCandles(rawList, timeframe);
         return buildDataset(market, resampled);
     }
-    
-    
+
     /** 실시간 모드 전용: liveCandle을 포함한 데이터셋 생성 */
     private OHLCDataset createDatasetWithLiveCandle(String market, int timeframe) {
         List<CandleDTO> rawList = candleDAO.getCandles(market, 1, DB_FETCH_LIMIT);

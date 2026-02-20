@@ -35,7 +35,7 @@ import okhttp3.Request;
 
 public class HistoryPanel extends JPanel implements UpbitWebSocketDao.TickerListener {
 	
-	String loginUser = "user_01";
+	String loginUser = "test_user1";
     
     // UI 컴포넌트 선언
     JPanel coinHeadPanel, tabPanel;

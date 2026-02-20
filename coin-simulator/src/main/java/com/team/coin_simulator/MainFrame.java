@@ -3,6 +3,7 @@ package com.team.coin_simulator;
 import javax.swing.*;
 import java.awt.*;
 import com.team.coin_simulator.Market_Panel.HistoryPanel;
+import com.team.coin_simulator.Alerts.PriceAlertService;
 import com.team.coin_simulator.Market_Order.OrderPanel;
 import com.team.coin_simulator.chart.CandleChartPanel;
 import com.team.coin_simulator.orderbook.OrderBookPanel;
@@ -14,7 +15,7 @@ import Investment_details.Investment_details_MainPanel;
  * 
  * 화면 구성:
  * 1. 거래 화면 (Trading View): 코인목록 + 차트 + 호가창 + 주문
- * 2. 투자내역 화면 (Investment View): 보유자산/투자손익/거래내역/미체결
+ * 2. 투자내역 화면 (Investment View): 보유자산/투자손익/거래내역/미결
  * 
  * 상단 버튼으로 두 화면 전환
  */
@@ -43,14 +44,16 @@ public class MainFrame extends JFrame implements TimeController.TimeChangeListen
     // 상태 관리
     private TimeController timeController;
 
-    private String currentUserId = "jjh153702@naver.com"; // 로그인 시스템 구현 전 임시 사용자
+    private String currentUserId = "test_user1"; // 로그인 시스템 구현 전 임시 사용자
     private boolean isTradingView = true; // true: 거래화면, false: 투자내역
     
     // 카드 식별자
     private static final String CARD_TRADING = "TRADING";
     private static final String CARD_INVESTMENT = "INVESTMENT";
+  
+    //알림 감시자
+    private PriceAlertService alertService;
 
-    
     public MainFrame(String userId) {
         super("가상화폐 모의투자 시스템");
         this.currentUserId = userId;
@@ -65,6 +68,9 @@ public class MainFrame extends JFrame implements TimeController.TimeChangeListen
         
         initComponents();
         initWebSocket();
+        
+        // 알림 서비스 (프레임 정보를 넘겨줌)
+        alertService = new PriceAlertService(this);
         
         setVisible(true);
     }
@@ -162,9 +168,9 @@ public class MainFrame extends JFrame implements TimeController.TimeChangeListen
         
         centerArea.add(chartPanel, BorderLayout.CENTER);
         centerArea.add(orderBookPanel, BorderLayout.SOUTH);
-        
+
         // 오른쪽: 주문 패널
-        orderPanel = new OrderPanel();
+        orderPanel = new OrderPanel(currentUserId);
         orderPanel.setPreferredSize(new Dimension(350, 0));
         
         // 조립
@@ -297,7 +303,7 @@ public class MainFrame extends JFrame implements TimeController.TimeChangeListen
         }
         
         SwingUtilities.invokeLater(() -> {
-            new MainFrame("user_01");
+            new MainFrame("test_user1");
         });
     }
 }
