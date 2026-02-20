@@ -27,7 +27,7 @@ public class DownloadDatabase {
      * 등록된 모든 코인의 6개월 치 데이터를 수집합니다.
      * @param unit 분 단위 (예: 1, 3, 5, 15, 30, 60, 240)
      */
-    public static void import6MonthsData(int unit) {
+    public static void importData(int unit) {
         // 1. 수집 종료 시점 설정 (현재로부터 6개월 전)
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime cutoffDate = now.minusMonths(6); 
@@ -48,61 +48,108 @@ public class DownloadDatabase {
     }
 
     private static void crawlCoinHistory(String market, int unit, LocalDateTime cutoffDate) {
-        String toDate = ""; // 빈 값이면 가장 최신 데이터 요청
+        String toDate = ""; 
         boolean isFinished = false;
         int totalSaved = 0;
 
-        while (!isFinished) {
-            try {
-                // 1. API 호출 (200개씩 요청)
-                String jsonResponse = fetchCandles(market, unit, 200, toDate);
-                JSONArray candles = new JSONArray(jsonResponse);
+        String sql = "INSERT INTO market_candle " +
+                     "(market, candle_date_time_utc, candle_date_time_kst, opening_price, high_price, low_price, " +
+                     "trade_price, timestamp, candle_acc_trade_price, candle_acc_trade_volume, unit) " +
+                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
+                     "ON DUPLICATE KEY UPDATE trade_price = VALUES(trade_price)";
 
-                if (candles.isEmpty()) {
-                    break; // 더 이상 데이터가 없으면 종료
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+
+            conn.setAutoCommit(false); 
+
+            // 🚨 [추가된 로직] DB에서 해당 코인의 가장 오래된(MIN) 날짜를 조회합니다.
+            String checkSql = "SELECT MIN(candle_date_time_utc) FROM market_candle WHERE market = ? AND unit = ?";
+            try (PreparedStatement checkStmt = conn.prepareStatement(checkSql)) {
+                checkStmt.setString(1, market);
+                checkStmt.setInt(2, unit);
+                try (java.sql.ResultSet rs = checkStmt.executeQuery()) {
+                    if (rs.next() && rs.getTimestamp(1) != null) {
+                        // 저장된 데이터가 있다면 그 시간부터 과거로 이어서 수집
+                        LocalDateTime oldestLdt = rs.getTimestamp(1).toLocalDateTime();
+                        toDate = oldestLdt.format(DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss")) + "Z";
+                        System.out.println(" ↳ 기존 데이터 발견! [" + toDate + "] 부터 이어서 수집합니다.");
+                    } else {
+                        System.out.println(" ↳ 기존 데이터 없음. 최신(현재)부터 수집을 시작합니다.");
+                    }
                 }
-
-                // 2. 가장 오래된 캔들(마지막 인덱스)의 시간 확인
-                JSONObject lastCandle = candles.getJSONObject(candles.length() - 1);
-                String lastDateStr = lastCandle.getString("candle_date_time_utc").replace("T", " ");
-                LocalDateTime lastDate = LocalDateTime.parse(lastDateStr, DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
-
-                // 3. DB 저장
-                saveBatch(market, unit, candles);
-                totalSaved += candles.length();
-                System.out.print("."); // 진행상황 표시 (점 하나당 200개)
-
-                // 4. 종료 조건 검사 (마지막 캔들이 목표 시점보다 과거면 종료)
-                if (lastDate.isBefore(cutoffDate)) {
-                    isFinished = true;
-                } else {
-                    // 5. 다음 요청을 위해 'to' 파라미터 업데이트 (마지막 캔들 시간 기준)
-                    toDate = lastDateStr;
-                }
-
-                // 6. 속도 제한 (초당 10회 미만 유지를 위해 0.12초 대기)
-                // 1000ms / 10회 = 100ms이지만, 안전마진을 위해 120ms 설정
-                Thread.sleep(120);
-
-            } catch (Exception e) {
-                System.err.println("\n[Error] " + market + " 수집 중단: " + e.getMessage());
-                // 에러 발생 시 해당 코인은 건너뛰고 다음 코인으로 진행하려면 break;
-                // 재시도 로직이 필요하면 여기에 추가
-                break; 
             }
+
+            while (!isFinished) {
+                try {
+                    String jsonResponse = fetchCandles(market, unit, 200, toDate);
+                    JSONArray candles = new JSONArray(jsonResponse);
+
+                    // ... (이하 기존 코드와 동일) ...
+                    
+                    if (candles.isEmpty()) {
+                        break; 
+                    }
+
+                    JSONObject lastCandle = candles.getJSONObject(candles.length() - 1);
+                    String utcRaw = lastCandle.getString("candle_date_time_utc"); 
+                    toDate = utcRaw + "Z"; 
+                    
+                    LocalDateTime lastDate = LocalDateTime.parse(utcRaw.replace("T", " "), DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+
+                    for (int i = 0; i < candles.length(); i++) {
+                        JSONObject c = candles.getJSONObject(i);
+                        pstmt.setString(1, market);
+                        pstmt.setTimestamp(2, Timestamp.valueOf(c.getString("candle_date_time_utc").replace("T", " ")));
+                        pstmt.setTimestamp(3, Timestamp.valueOf(c.getString("candle_date_time_kst").replace("T", " ")));
+                        pstmt.setBigDecimal(4, c.getBigDecimal("opening_price"));
+                        pstmt.setBigDecimal(5, c.getBigDecimal("high_price"));
+                        pstmt.setBigDecimal(6, c.getBigDecimal("low_price"));
+                        pstmt.setBigDecimal(7, c.getBigDecimal("trade_price"));
+                        pstmt.setLong(8, c.getLong("timestamp"));
+                        pstmt.setBigDecimal(9, c.getBigDecimal("candle_acc_trade_price"));
+                        pstmt.setBigDecimal(10, c.getBigDecimal("candle_acc_trade_volume"));
+                        pstmt.setInt(11, unit);
+                        pstmt.addBatch();
+                    }
+                    
+                    pstmt.executeBatch(); 
+                    pstmt.clearBatch();
+                    
+                    totalSaved += candles.length();
+                    System.out.print("."); 
+
+                    if (lastDate.isBefore(cutoffDate)) {
+                        isFinished = true;
+                    }
+
+                    Thread.sleep(120); 
+
+                } catch (Exception e) {
+                    System.err.println("\n[Error] " + market + " 수집 중단: " + e.getMessage());
+                    break; 
+                }
+            }
+            
+            conn.commit(); 
+            
+        } catch (Exception e) {
+            e.printStackTrace();
         }
-        System.out.println(" 완료 (총 " + totalSaved + "개)");
+        
+        System.out.println(" 완료 (총 " + totalSaved + "개 추가됨)");
     }
 
     private static String fetchCandles(String market, int unit, int count, String toDate) throws Exception {
-        StringBuilder urlBuilder = new StringBuilder(UPBIT_URL_MINUTES);
+        StringBuilder urlBuilder = new StringBuilder("https://api.upbit.com/v1/candles/minutes/");
         urlBuilder.append(unit)
                   .append("?market=").append(market)
                   .append("&count=").append(count);
 
-        // to 파라미터가 있으면 추가 (없으면 최신 데이터)
         if (toDate != null && !toDate.isEmpty()) {
-            urlBuilder.append("&to=").append(toDate.replace(" ", "%20")); // 공백 URL 인코딩
+            // 🚨 핵심 3: 날짜 데이터에 들어간 특수문자(:, T, Z)가 URL에서 꼬이지 않게 URL 인코딩 적용
+            String encodedTo = toDate.replace(":", "%3A").replace(" ", "%20");
+            urlBuilder.append("&to=").append(encodedTo);
         }
 
         URL url = new URL(urlBuilder.toString());
@@ -111,7 +158,7 @@ public class DownloadDatabase {
         conn.setRequestProperty("Accept", "application/json");
 
         if (conn.getResponseCode() != 200) {
-            throw new RuntimeException("HTTP Error: " + conn.getResponseCode()); // 429 Too Many Requests 등 처리
+            throw new RuntimeException("HTTP Error: " + conn.getResponseCode()); 
         }
 
         BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream()));
@@ -169,6 +216,6 @@ public class DownloadDatabase {
     	System.out.println(">>> 데이터 수집 프로세스 시작 <<<");
         // 6개월 치 데이터 수집 실행
         // unit: 1(1분), 60(1시간), 240(4시간) 권장
-        import6MonthsData(240); 
+        importData(1); 
     }
 }
