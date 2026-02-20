@@ -19,6 +19,7 @@ import Investment_details.Investment_details_MainPanel;
  * 
  * 상단 버튼으로 두 화면 전환
  */
+
 public class MainFrame extends JFrame implements TimeController.TimeChangeListener {
     
     // 상단 패널
@@ -42,18 +43,20 @@ public class MainFrame extends JFrame implements TimeController.TimeChangeListen
     
     // 상태 관리
     private TimeController timeController;
-    private String currentUserId = "user_01";
+
+    private String currentUserId = "jjh153702@naver.com"; // 로그인 시스템 구현 전 임시 사용자
     private boolean isTradingView = true; // true: 거래화면, false: 투자내역
     
     // 카드 식별자
     private static final String CARD_TRADING = "TRADING";
     private static final String CARD_INVESTMENT = "INVESTMENT";
-    
+  
     //알림 감시자
     private PriceAlertService alertService;
-    
-    public MainFrame() {
+
+    public MainFrame(String userId) {
         super("가상화폐 모의투자 시스템");
+        this.currentUserId = userId;
         
         timeController = TimeController.getInstance();
         timeController.initialize(currentUserId);
@@ -149,7 +152,7 @@ public class MainFrame extends JFrame implements TimeController.TimeChangeListen
         panel.setBackground(Color.WHITE);
         
         // 왼쪽: 코인 목록
-        historyPanel = new HistoryPanel();
+        historyPanel = new HistoryPanel(currentUserId);
         historyPanel.setPreferredSize(new Dimension(350, 0));
         historyPanel.addCoinSelectionListener(this::onCoinSelected);
         
@@ -165,9 +168,9 @@ public class MainFrame extends JFrame implements TimeController.TimeChangeListen
         
         centerArea.add(chartPanel, BorderLayout.CENTER);
         centerArea.add(orderBookPanel, BorderLayout.SOUTH);
-        
+
         // 오른쪽: 주문 패널
-        orderPanel = new OrderPanel();
+        orderPanel = new OrderPanel(currentUserId);
         orderPanel.setPreferredSize(new Dimension(350, 0));
         
         // 조립
@@ -306,7 +309,7 @@ public class MainFrame extends JFrame implements TimeController.TimeChangeListen
         }
         
         SwingUtilities.invokeLater(() -> {
-            new MainFrame();
+            new MainFrame("user_01");
         });
     }
 }
