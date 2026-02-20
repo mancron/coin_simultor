@@ -262,21 +262,15 @@ public class MainFrame extends JFrame implements TimeController.TimeChangeListen
         SwingUtilities.invokeLater(() -> {
             if (isRealtime) {
                 System.out.println("[MainFrame] 실시간 모드로 전환됨");
+                // 차트의 backtestTargetTime 초기화 후 실시간 복귀
+                chartPanel.resetToRealtimeMode();
                 UpbitWebSocketDao.getInstance().start();
             } else {
                 System.out.println("[MainFrame] 백테스팅 모드로 전환됨: " + newTime);
                 UpbitWebSocketDao.getInstance().close();
-                loadHistoricalData(newTime);
+                chartPanel.loadHistoricalData(newTime);
             }
         });
-    }
-    
-    /**
-     * 과거 데이터 로드
-     */
-    private void loadHistoricalData(java.time.LocalDateTime targetTime) {
-        System.out.println("[MainFrame] 과거 데이터 로드 중: " + targetTime);
-        chartPanel.loadHistoricalData(targetTime);
     }
     
     /**
