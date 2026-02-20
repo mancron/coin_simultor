@@ -1,25 +1,21 @@
 package com.team.coin_simulator.chart;
 
-import java.awt.*;
-import java.awt.event.*;
-import java.awt.geom.Rectangle2D;
-import java.time.LocalDateTime;
-import java.time.temporal.ChronoUnit;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Date;
-import java.util.List;
-import javax.swing.*;
-import java.text.DecimalFormat;
-import java.text.SimpleDateFormat;
-
-import org.jfree.chart.*;
-import org.jfree.chart.axis.*;
-import org.jfree.chart.plot.ValueMarker;
+import org.jfree.chart.ChartFactory;
+import org.jfree.chart.ChartPanel;
+import org.jfree.chart.JFreeChart;
+import org.jfree.chart.axis.NumberAxis;
 import org.jfree.chart.plot.XYPlot;
 import org.jfree.chart.renderer.xy.CandlestickRenderer;
 import org.jfree.data.xy.DefaultHighLowDataset;
 import org.jfree.data.xy.OHLCDataset;
+
+import javax.swing.*;
+import java.awt.*;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Date;
+import java.util.List;
 
 /**
  * [CandleChartPanel]
@@ -96,9 +92,6 @@ public class CandleChartPanel extends JPanel {
     private boolean overlayRising = true;
 
 
-    // ════════════════════════════════════════════════════
-    //  생성자
-    // ════════════════════════════════════════════════════
     public CandleChartPanel(String title) {
         setLayout(new BorderLayout());
         setBackground(Color.WHITE);
@@ -121,6 +114,8 @@ public class CandleChartPanel extends JPanel {
         startLiveTimer();
     }
 
+        // 2. 차트 생성
+        chart = ChartFactory.createCandlestickChart("", "", "", dataset, false);
 
     // ════════════════════════════════════════════════════
     //  차트 UI 설정
@@ -137,13 +132,10 @@ public class CandleChartPanel extends JPanel {
         domainAxis.setAutoTickUnitSelection(true);
 
         CandlestickRenderer renderer = new CandlestickRenderer();
-        renderer.setAutoWidthMethod(CandlestickRenderer.WIDTHMETHOD_SMALLEST);
-        renderer.setAutoWidthGap(-0.1);
         renderer.setDrawVolume(false);
         renderer.setUpPaint(Color.RED);
         renderer.setDownPaint(Color.BLUE);
         plot.setRenderer(renderer);
-    }
 
     private void setupChartPanel() {
         chartPanel = new OverlayChartPanel(chart);
@@ -218,6 +210,7 @@ public class CandleChartPanel extends JPanel {
                 // ★ refreshChart()가 backtestTargetTime을 참조하므로
                 //   백테스팅 시점이 자동으로 유지됩니다.
                 refreshChart();
+                chart.setTitle(getCurrentMarketSymbol() + " Chart (" + label + ")");
             });
 
             buttonPanel.add(button);
@@ -596,14 +589,15 @@ public class CandleChartPanel extends JPanel {
         double[] volume = new double[count];
 
         for (int i = 0; i < count; i++) {
-            CandleDTO dto = list.get(i);
-            date[i]   = java.sql.Timestamp.valueOf(dto.getCandleDateTimeKst());
-            open[i]   = dto.getOpeningPrice();
-            high[i]   = dto.getHighPrice();
-            low[i]    = dto.getLowPrice();
-            close[i]  = dto.getTradePrice();
+            CandleDTO dto = resampledList.get(i);
+            date[i] = java.sql.Timestamp.valueOf(dto.getCandleDateTimeKst());
+            open[i] = dto.getOpeningPrice();
+            high[i] = dto.getHighPrice();
+            low[i] = dto.getLowPrice();
+            close[i] = dto.getTradePrice();
             volume[i] = dto.getCandleAccTradeVolume();
         }
+
         return new DefaultHighLowDataset(market, date, high, low, open, close, volume);
     }
 
@@ -617,8 +611,8 @@ public class CandleChartPanel extends JPanel {
      */
     public void changeMarket(String coinSymbol) {
         this.currentMarket = "KRW-" + coinSymbol;
-        liveCandle = null;
         refreshChart();
+        chart.setTitle(coinSymbol + " Chart");
     }
 
     /**
@@ -660,5 +654,23 @@ public class CandleChartPanel extends JPanel {
 
     private String getCurrentMarketSymbol() {
         return currentMarket.replace("KRW-", "");
+    }
+
+    // === 독립 실행 테스트용 메서드 (옵션) ===
+    public static JFrame createTestFrame() {
+        JFrame frame = new JFrame("주기별 봉 합성 테스트");
+        CandleChartPanel panel = new CandleChartPanel("BTC 차트");
+        frame.add(panel);
+        frame.pack();
+        frame.setLocationRelativeTo(null);
+        frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        return frame;
+    }
+
+    public static void main(String[] args) {
+        SwingUtilities.invokeLater(() -> {
+            JFrame frame = createTestFrame();
+            frame.setVisible(true);
+        });
     }
 }
