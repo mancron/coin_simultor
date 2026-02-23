@@ -30,19 +30,21 @@ public class CandleChartBacktestAdapter
         implements BacktestTimeController.BacktestTickListener {
 
     private final CandleChartPanel chartPanel;
+    private final com.team.coin_simulator.Market_Panel.HistoryPanel historyPanel;
+    private final DAO.HistoricalDataDAO historicalDataDAO = new DAO.HistoricalDataDAO();
 
     /** 마지막으로 차트를 갱신한 시뮬레이션 시각 */
-    private LocalDateTime lastChartUpdateTime = null;
+    private LocalDateTime lastChartUpdateTime  = null;
+    private LocalDateTime lastMarketUpdateTime = null;  // ← 분리!
 
     /**
      * 차트를 갱신하는 최소 시뮬레이션 간격 (분)
      * 배속에 따라 동적으로 계산됩니다.
      */
-    private static final int MIN_CHART_INTERVAL_MINUTES = 4;
+    private static final int MIN_CHART_INTERVAL_MINUTES = 1;
 
     // HistoryPanel 참조 (시세 목록 업데이트)
-    private final com.team.coin_simulator.Market_Panel.HistoryPanel historyPanel;
-    private final DAO.HistoricalDataDAO historicalDataDAO = new DAO.HistoricalDataDAO();
+
 
     public CandleChartBacktestAdapter(
             CandleChartPanel chartPanel,
@@ -57,32 +59,27 @@ public class CandleChartBacktestAdapter
 
     @Override
     public void onTick(LocalDateTime currentSimTime, BacktestSpeed speed) {
-        // ── 1. 차트 갱신 throttle ─────────────────────
-        int chartIntervalMinutes = calcChartInterval(speed);
 
+        // ── 1. 차트 갱신 ─────────────────────────────
+        int chartIntervalMinutes = calcChartInterval(speed);
         boolean shouldUpdateChart = (lastChartUpdateTime == null)
-            || java.time.temporal.ChronoUnit.MINUTES.between(lastChartUpdateTime, currentSimTime)
-               >= chartIntervalMinutes;
+            || java.time.temporal.ChronoUnit.MINUTES
+                   .between(lastChartUpdateTime, currentSimTime) >= chartIntervalMinutes;
 
         if (shouldUpdateChart) {
             lastChartUpdateTime = currentSimTime;
             final LocalDateTime snapTime = currentSimTime;
-
-            // CandleChartPanel 갱신 (EDT에서 실행)
-            SwingUtilities.invokeLater(() ->
-                chartPanel.loadHistoricalData(snapTime)
-            );
+            SwingUtilities.invokeLater(() -> chartPanel.loadHistoricalData(snapTime));
         }
 
-        // ── 2. 마켓 패널(시세 목록) 갱신 ─────────────
-        // 가격 변동이 빠른 배속에서 부하를 줄이기 위해 30초 시뮬레이션 간격으로 제한
-        boolean shouldUpdateMarket = (lastChartUpdateTime == null)
-            || java.time.temporal.ChronoUnit.MINUTES.between(lastChartUpdateTime, currentSimTime)
-               >= Math.max(1, speed.getMinutesPerTick());
+        // ── 2. 마켓 패널 갱신 (독립된 필드로 체크) ────
+        int marketInterval = Math.max(1, speed.getMinutesPerTick());
+        boolean shouldUpdateMarket = (lastMarketUpdateTime == null)
+            || java.time.temporal.ChronoUnit.MINUTES
+                   .between(lastMarketUpdateTime, currentSimTime) >= marketInterval;
 
-        if (shouldUpdateMarket) {
+
             updateMarketPanel(currentSimTime);
-        }
     }
 
     // ════════════════════════════════════════════════

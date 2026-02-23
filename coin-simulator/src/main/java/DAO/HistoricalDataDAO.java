@@ -24,11 +24,11 @@ public class HistoricalDataDAO {
         Map<String, TickerDto> tickers = new HashMap<>();
         
         String sql = "SELECT market, trade_price, opening_price, high_price, low_price, " +
-                    "candle_acc_trade_price, candle_acc_trade_volume " +
-                    "FROM market_candle " +
-                    "WHERE candle_date_time_kst <= ? " +
-                    "  AND unit = 240 " + // 4시간 봉 기준
-                    "ORDER BY candle_date_time_kst DESC";
+                "candle_acc_trade_price, candle_acc_trade_volume " +
+                "FROM market_candle " +
+                "WHERE candle_date_time_kst <= ? " +
+                "  AND unit = 1 " + // 1분봉으로 변경
+                "ORDER BY candle_date_time_kst DESC";
         
         try (Connection conn = DBConnection.getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
