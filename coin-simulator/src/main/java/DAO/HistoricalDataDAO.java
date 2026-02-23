@@ -121,6 +121,49 @@ public class HistoricalDataDAO {
         return BigDecimal.ZERO;
     }
     
+    
+    /**
+     * [신규 추가] 당일 오전 9시(또는 해당 일자의 가장 첫 거래) 시가를 가져옵니다.
+     */
+    public Map<String, Double> getDailyOpenPrices(LocalDateTime targetTime) {
+        Map<String, Double> openPriceMap = new HashMap<>();
+        
+        // 기준 시간: 오전 9시 (KST)
+        LocalDateTime startOfDay = targetTime.withHour(9).withMinute(0).withSecond(0).withNano(0);
+        if (targetTime.isBefore(startOfDay)) {
+            startOfDay = startOfDay.minusDays(1);
+        }
+
+        // 해당 일자(오전 9시 이후)의 코인별 가장 첫 번째 1분봉의 시가(opening_price)를 찾습니다.
+        String sql = "SELECT m.market, m.opening_price " +
+                     "FROM market_candle m " +
+                     "INNER JOIN (" +
+                     "    SELECT market, MIN(candle_date_time_kst) as first_time " +
+                     "    FROM market_candle " +
+                     "    WHERE candle_date_time_kst >= ? AND candle_date_time_kst <= ? AND unit = 1 " +
+                     "    GROUP BY market" +
+                     ") first_candle ON m.market = first_candle.market AND m.candle_date_time_kst = first_candle.first_time " +
+                     "WHERE m.unit = 1";
+
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            
+            pstmt.setTimestamp(1, Timestamp.valueOf(startOfDay));
+            pstmt.setTimestamp(2, Timestamp.valueOf(targetTime));
+            
+            try (ResultSet rs = pstmt.executeQuery()) {
+                while (rs.next()) {
+                    String market = rs.getString("market").replace("KRW-", "");
+                    openPriceMap.put(market, rs.getDouble("opening_price"));
+                }
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return openPriceMap;
+    }
+    
+    
     public java.util.List<DTO.MarketCandleDTO> getCandlesUntil(
             String market, int unit, LocalDateTime endTime, int count) {
         java.util.List<DTO.MarketCandleDTO> candles = new java.util.ArrayList<>();
