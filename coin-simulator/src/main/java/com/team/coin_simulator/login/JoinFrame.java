@@ -11,6 +11,9 @@ import javax.swing.border.TitledBorder;
 import DAO.AssetDAO;
 import DAO.UserDAO;
 import DTO.UserDTO;
+import DAO.SignUpService;
+
+
 
 public class JoinFrame extends JFrame {
     // 공통 폰트 설정
@@ -160,38 +163,31 @@ public class JoinFrame extends JFrame {
                     user.setPassword(pw);
                     user.setNickname(email.split("@")[0]); // 이메일 앞부분을 기본 닉네임으로 설정
                     
-                    // 6. DB 저장 시도 (사용자 + 초기 자산)
-                    boolean userCreated = userDAO.insertUser(user, phone);
+                   
+                 // 6) DB 저장 시도 (users + simulation_sessions + assets) — 트랜잭션
+                    String phoneDigitsOnly = phone.replaceAll("[^0-9]", "");
+
+                    UserDTO user = new UserDTO();
+                    user.setUserId(email);
+                    user.setPassword(pw);
+                    user.setNickname(email.split("@")[0]);
+
+                    boolean ok = SignUpService.register(user, phoneDigitsOnly);
+
+                    long initialKRW = initialAsset.longValue();
+                    boolean ok = SignUpService.register(user, phoneDigitsOnly, initialKRW);
                     
-                    if (userCreated) {
-                        // 사용자 생성 성공 -> 초기 자산 생성
-                        boolean assetCreated = AssetDAO.createInitialAsset(email, initialAsset);
-                        
-                        if (assetCreated) {
-                            JOptionPane.showMessageDialog(JoinFrame.this, 
-                                "회원가입이 정상적으로 완료되었습니다!\n" +
-                                "초기 투자금액: " + String.format("%,d", initialAsset.longValue()) + "원\n" +
-                                "로그인 화면으로 이동합니다.",
-                                "가입 완료", JOptionPane.INFORMATION_MESSAGE);
-                            new LoginFrame();
-                            dispose();
-                        } else {
-                            // 자산 생성 실패 - 사용자는 생성되었으나 자산이 없는 상태
-                            JOptionPane.showMessageDialog(JoinFrame.this, 
-                                "회원가입은 완료되었으나 초기 자산 설정에 실패했습니다.\n" +
-                                "관리자에게 문의하거나 로그인 후 자산을 확인해주세요.", 
-                                "경고", JOptionPane.WARNING_MESSAGE);
-                            new LoginFrame();
-                            dispose();
-                        }
+                    if (ok) {
+                        JOptionPane.showMessageDialog(JoinFrame.this,
+                            "회원가입이 정상적으로 완료되었습니다!\n로그인 화면으로 이동합니다.",
+                            "가입 완료", JOptionPane.INFORMATION_MESSAGE);
+                        new LoginFrame();
+                        dispose();
                     } else {
-                        JOptionPane.showMessageDialog(JoinFrame.this, 
-                            "서버 오류로 가입에 실패했습니다. 잠시 후 다시 시도해주세요.", 
+                        JOptionPane.showMessageDialog(JoinFrame.this,
+                            "서버(DB) 오류로 가입에 실패했습니다.\n콘솔 로그(SQLException)를 확인하세요.",
                             "DB 오류", JOptionPane.ERROR_MESSAGE);
                     }
-                }
-            }
-        };
         
         // 버튼 클릭 시 회원가입
         joinBtn.addActionListener(joinAction);
@@ -270,11 +266,10 @@ public class JoinFrame extends JFrame {
     }
 
     public static void main(String[] args) {
-        // 시스템 테마 적용
         try {
             UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
         } catch (Exception e) {}
-        
-        SwingUtilities.invokeLater(() -> new JoinFrame());
+
+        SwingUtilities.invokeLater(JoinFrame::new);
     }
 }

@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -77,6 +78,25 @@ public class AssetDAO {
      * @param initialAmount 초기 투자금액
      * @return 성공 여부
      */
+    public static boolean createInitialKRW(String userId, Long sessionId) {
+
+        String sql =
+            "INSERT INTO assets (session_id, user_id, currency, balance) " +
+            "VALUES (?, ?, 'KRW', 100000000)";
+
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+
+            ps.setLong(1, sessionId);
+            ps.setString(2, userId);
+
+            return ps.executeUpdate() == 1;
+
+        } catch (SQLException e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
     public static boolean createInitialAsset(String userId, BigDecimal initialAmount) {
         String sql = "INSERT INTO assets (user_id, currency, session_id, balance, locked, avg_buy_price) " +
                      "VALUES (?, 'KRW', 0, ?, 0, 0)";

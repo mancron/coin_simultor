@@ -1,7 +1,6 @@
 package DAO;
 
 import java.sql.*;
-
 import com.team.coin_simulator.DBConnection;
 import DTO.UserDTO;
 
@@ -40,6 +39,7 @@ public class UserDAO {
             }
 
         } catch (SQLException e) {
+            System.err.println("[UserDAO] 로그인 체크 실패: " + e.getMessage());
             e.printStackTrace();
         }
 
@@ -63,6 +63,55 @@ public class UserDAO {
             }
 
         } catch (SQLException e) {
+            System.err.println("[UserDAO] 중복 체크 실패: " + e.getMessage());
+            e.printStackTrace();
+        }
+
+        return false;
+    }
+
+    // =========================================================
+    // 회원가입 ⭐ [수정: auth_provider, created_at 명시적 추가]
+    // =========================================================
+    public static boolean insertUser(UserDTO user, String phone) {
+        
+        // 전화번호 정제 (하이픈 제거)
+        String cleanPhone = (phone == null) ? "" : phone.replaceAll("[^0-9]", "");
+        
+        // phone_number 필수 체크
+        if (cleanPhone.isEmpty()) {
+            System.err.println("[UserDAO] 전화번호는 필수입니다.");
+            return false;
+        }
+
+        String sql =
+            "INSERT INTO users (user_id, password, nickname, phone_number, auth_provider, created_at) " +
+            "VALUES (?, ?, ?, ?, ?, NOW())";
+
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+
+            pstmt.setString(1, user.getUserId());
+            pstmt.setString(2, user.getPassword());
+            pstmt.setString(3, user.getNickname());
+            pstmt.setString(4, cleanPhone);
+            pstmt.setString(5, "EMAIL"); // auth_provider 기본값
+
+            int result = pstmt.executeUpdate();
+            
+            if (result == 1) {
+                System.out.println("[UserDAO] 회원가입 성공: " + user.getUserId());
+                
+                // 기본 프로필 이미지 설정
+                updateProfileImagePath(user.getUserId(), "default");
+                
+                return true;
+            } else {
+                System.err.println("[UserDAO] INSERT 실패: 영향받은 행이 0개");
+            }
+
+        } catch (SQLException e) {
+            System.err.println("[UserDAO] 회원가입 실패: " + e.getMessage());
             e.printStackTrace();
         }
 
@@ -86,6 +135,7 @@ public class UserDAO {
             }
 
         } catch (SQLException e) {
+            System.err.println("[UserDAO] 아이디 찾기 실패: " + e.getMessage());
             e.printStackTrace();
         }
 
@@ -110,6 +160,7 @@ public class UserDAO {
             }
 
         } catch (SQLException e) {
+            System.err.println("[UserDAO] 사용자 확인 실패: " + e.getMessage());
             e.printStackTrace();
         }
 
@@ -132,7 +183,10 @@ public class UserDAO {
                 ps.setString(2, currentPw);
 
                 try (ResultSet rs = ps.executeQuery()) {
-                    if (!rs.next()) return false;
+                    if (!rs.next()) {
+                        System.err.println("[UserDAO] 현재 비밀번호 불일치");
+                        return false;
+                    }
                 }
             }
 
@@ -141,10 +195,16 @@ public class UserDAO {
                 ps2.setString(1, newPw);
                 ps2.setString(2, userId);
 
-                return ps2.executeUpdate() == 1;
+                int result = ps2.executeUpdate();
+                
+                if (result == 1) {
+                    System.out.println("[UserDAO] 비밀번호 변경 성공: " + userId);
+                    return true;
+                }
             }
 
         } catch (SQLException e) {
+            System.err.println("[UserDAO] 비밀번호 변경 실패: " + e.getMessage());
             e.printStackTrace();
         }
 
@@ -164,9 +224,15 @@ public class UserDAO {
             pstmt.setString(1, newPassword);
             pstmt.setString(2, userId);
 
-            return pstmt.executeUpdate() == 1;
+            int result = pstmt.executeUpdate();
+            
+            if (result == 1) {
+                System.out.println("[UserDAO] 임시 비밀번호 설정 성공: " + userId);
+                return true;
+            }
 
         } catch (SQLException e) {
+            System.err.println("[UserDAO] 임시 비밀번호 설정 실패: " + e.getMessage());
             e.printStackTrace();
         }
 
@@ -191,7 +257,7 @@ public class UserDAO {
     }
 
     // =========================================================
-    // ⭐ 프로필 관리 (중복 제거된 유일한 세트)
+    // ⭐ 프로필 관리
     // =========================================================
     public static class ProfileInfo {
 
@@ -204,6 +270,96 @@ public class UserDAO {
         }
     }
 
+    // 프로필 조회
+    public static ProfileInfo getProfile(String userId) {
+
+        String sql = "SELECT nickname, profile_image_path FROM users WHERE user_id = ?";
+
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+
+            ps.setString(1, userId);
+
+            try (ResultSet rs = ps.executeQuery()) {
+
+                if (rs.next()) {
+                    String nickname = rs.getString("nickname");
+                    String imagePath = rs.getString("profile_image_path");
+                    
+                    // NULL 또는 빈 문자열이면 "default"로 반환
+                    if (imagePath == null || imagePath.trim().isEmpty()) {
+                        imagePath = "default";
+                    }
+                    
+                    return new ProfileInfo(nickname, imagePath);
+                }
+            }
+
+        } catch (SQLException e) {
+            System.err.println("[UserDAO] 프로필 조회 실패: " + e.getMessage());
+            e.printStackTrace();
+        }
+
+        return new ProfileInfo(null, "default");
+    }
+
+    // 닉네임 변경
+    public static boolean updateNickname(String userId, String newNickname) {
+
+        String sql = "UPDATE users SET nickname = ? WHERE user_id = ?";
+
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+
+            ps.setString(1, newNickname);
+            ps.setString(2, userId);
+
+            int result = ps.executeUpdate();
+            
+            if (result == 1) {
+                System.out.println("[UserDAO] 닉네임 변경 성공: " + userId + " -> " + newNickname);
+                return true;
+            } else {
+                System.err.println("[UserDAO] 닉네임 변경 실패: 사용자를 찾을 수 없음");
+            }
+
+        } catch (SQLException e) {
+            System.err.println("[UserDAO] 닉네임 변경 실패: " + e.getMessage());
+            e.printStackTrace();
+        }
+
+        return false;
+    }
+
+    // 프로필 사진 경로 변경
+    public static boolean updateProfileImagePath(String userId, String path) {
+
+        String sql = "UPDATE users SET profile_image_path = ? WHERE user_id = ?";
+
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+
+            ps.setString(1, path);
+            ps.setString(2, userId);
+
+            int result = ps.executeUpdate();
+            
+            if (result == 1) {
+                System.out.println("[UserDAO] 프로필 이미지 업데이트 성공: " + path);
+                return true;
+            } else {
+                System.err.println("[UserDAO] 프로필 이미지 업데이트 실패: 사용자를 찾을 수 없음");
+            }
+
+        } catch (SQLException e) {
+            System.err.println("[UserDAO] 프로필 이미지 업데이트 실패: " + e.getMessage());
+            e.printStackTrace();
+        }
+
+        return false;
+    }
+
+    // 오류 문자열을 돌려주는 메서드
     public static String updateNicknameWithError(String userId, String newNickname) {
         String sql = "UPDATE users SET nickname = ? WHERE user_id = ?";
         try (Connection conn = DBConnection.getConnection();
@@ -222,7 +378,7 @@ public class UserDAO {
         }
     }
 
-    //오류 문자열을 돌려주는 메소드
+    // 오류 문자열을 돌려주는 메서드
     public static String updateProfileImagePathWithError(String userId, String path) {
         String sql = "UPDATE users SET profile_image_path = ? WHERE user_id = ?";
         try (Connection conn = DBConnection.getConnection();
@@ -239,100 +395,5 @@ public class UserDAO {
             e.printStackTrace();
             return "SQL 오류: " + e.getMessage();
         }
-    }
-    
-    // 프로필 조회
-    public static ProfileInfo getProfile(String userId) {
-
-        String sql = "SELECT nickname, profile_image_path FROM users WHERE user_id = ?";
-
-        try (Connection conn = DBConnection.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-
-            ps.setString(1, userId);
-
-            try (ResultSet rs = ps.executeQuery()) {
-
-                if (rs.next()) {
-                    return new ProfileInfo(
-                            rs.getString("nickname"),
-                            rs.getString("profile_image_path"));
-                }
-            }
-
-        } catch (SQLException e) {
-            e.printStackTrace();
-        }
-
-        return new ProfileInfo(null, null);
-    }
-
-    // 닉네임 변경
-    public static boolean updateNickname(String userId, String newNickname) {
-
-        String sql = "UPDATE users SET nickname = ? WHERE user_id = ?";
-
-        try (Connection conn = DBConnection.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-
-            ps.setString(1, newNickname);
-            ps.setString(2, userId);
-
-            return ps.executeUpdate() == 1;
-
-        } catch (SQLException e) {
-            e.printStackTrace();
-        }
-
-        return false;
-    }
-
-    // 프로필 사진 경로 변경
-    public static boolean updateProfileImagePath(String userId, String path) {
-
-        String sql = "UPDATE users SET profile_image_path = ? WHERE user_id = ?";
-
-        try (Connection conn = DBConnection.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-
-            ps.setString(1, path);
-            ps.setString(2, userId);
-
-            return ps.executeUpdate() == 1;
-
-        } catch (SQLException e) {
-            e.printStackTrace();
-        }
-
-        return false;
-    }
-
-    // =========================================================
-    // 회원가입 (프로젝트에서 실제 구현된 것 쓰면 됨)
-    // =========================================================
- // 기존 (❌)
-
-    // 수정 (✅)
-    public static boolean insertUser(UserDTO user, String phone) {
-
-        String sql =
-            "INSERT INTO users (user_id, password, nickname, phone_number) " +
-            "VALUES (?, ?, ?, ?)";
-
-        try (Connection conn = DBConnection.getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
-
-            pstmt.setString(1, user.getUserId());
-            pstmt.setString(2, user.getPassword());
-            pstmt.setString(3, user.getNickname());
-            pstmt.setString(4, phone);
-
-            return pstmt.executeUpdate() == 1;
-
-        } catch (SQLException e) {
-            e.printStackTrace(); // ⭐ 콘솔에 실패 원인 찍힘
-        }
-
-        return false;
     }
 }

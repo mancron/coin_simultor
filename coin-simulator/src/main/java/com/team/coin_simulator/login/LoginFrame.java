@@ -263,8 +263,19 @@ public class LoginFrame extends JFrame {
         goToJoinBtn.setCursor(new Cursor(Cursor.HAND_CURSOR));
         goToJoinBtn.setMargin(new Insets(0, 0, 0, 0));
         goToJoinBtn.addActionListener(e -> {
-            new JoinFrame();
-            dispose();
+            try {
+                JoinFrame join = new JoinFrame();   // 여기서 예외 나면 아래로 떨어짐
+                join.setVisible(true);              // JoinFrame 생성자에서 setVisible 안 하면 이 줄이 필요
+                dispose();                          // ✅ JoinFrame이 뜬 다음에 닫기
+            } catch (Throwable ex) {
+                ex.printStackTrace();
+                JOptionPane.showMessageDialog(
+                    LoginFrame.this,
+                    "JoinFrame 열기 실패: " + ex.getClass().getSimpleName() + "\n" + ex.getMessage(),
+                    "오류",
+                    JOptionPane.ERROR_MESSAGE
+                );
+            }
         });
 
         joinHintPanel.add(joinLabel);
