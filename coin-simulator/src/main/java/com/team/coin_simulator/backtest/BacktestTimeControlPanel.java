@@ -79,9 +79,14 @@ public class BacktestTimeControlPanel extends JPanel
 
     private void buildUI() {
         // ── 왼쪽: 세션 선택 버튼 ─────────────────────
-        btnSelectSession = new JButton("📁 세션 선택");
+    	btnSelectSession = new JButton(" 세션 선택");
         styleBtn(btnSelectSession, new Color(52, 152, 219), Color.WHITE);
-        btnSelectSession.addActionListener(e -> openSessionDialog());
+        // [수정] MainFrame에 만들어둔 openSessionDialog()를 호출하도록 변경!
+        btnSelectSession.addActionListener(e -> {
+            if (parentFrame instanceof com.team.coin_simulator.MainFrame) {
+                ((com.team.coin_simulator.MainFrame) parentFrame).openSessionDialog();
+            }
+        });
 
         JPanel leftPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
         leftPanel.setOpaque(false);
@@ -159,7 +164,15 @@ public class BacktestTimeControlPanel extends JPanel
     // ════════════════════════════════════════════════
     //  세션 선택 다이얼로그 오픈
     // ════════════════════════════════════════════════
-
+    public void activateSessionUI(SessionDTO session) {
+        this.currentSession = session;
+        setControlsEnabled(true);
+        highlightSpeedButton(BacktestSpeed.SPEED_1X);
+        
+        NotificationUtil.showToast(parentFrame,
+            "백테스팅 시작: " + session.getSessionName());
+    }
+    
     private void openSessionDialog() {
         BacktestSessionDialog dlg = new BacktestSessionDialog(parentFrame, userId);
         dlg.setVisible(true);
