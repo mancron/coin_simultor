@@ -35,14 +35,16 @@ public class ProfitLoss_MainPanel extends JPanel {
     private final String userId;
     private List<ExecutionDTO> currentExecutions;
     private int currentDays = 30; // 현재 조회 기간
+    private long sessionId;
 
     /**
      * 투자손익 메인 패널 생성자
      * 
      * @param userId 사용자 ID
      */
-    public ProfitLoss_MainPanel(String userId) {
+    public ProfitLoss_MainPanel(String userId,long sessionId) {
         this.userId = userId;
+        this.sessionId = sessionId;
         this.dao = new ProfitLossDAO();
         
         setLayout(new BorderLayout(0, 0));

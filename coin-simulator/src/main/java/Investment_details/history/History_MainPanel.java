@@ -31,6 +31,7 @@ public class History_MainPanel extends JPanel {
     
     private final HistoryDAO dao;
     private final String userId;
+    private long sessionId;
     
     // 현재 필터 상태
     private LocalDate currentStartDate;
@@ -38,8 +39,9 @@ public class History_MainPanel extends JPanel {
     private String currentType = "ALL";
     private String currentMarket = "ALL";
     
-    public History_MainPanel(String userId) {
+    public History_MainPanel(String userId, long sessionId) {
         this.userId = userId;
+        this.sessionId = sessionId;
         this.dao = new HistoryDAO();
         
         setLayout(new BorderLayout());
@@ -93,6 +95,11 @@ public class History_MainPanel extends JPanel {
         currentEndDate = LocalDate.now();
         currentStartDate = currentEndDate.minusMonths(1);
         refreshData();
+    }
+    
+    
+    public void setSessionId(long sessionId) {
+        this.sessionId = sessionId;
     }
     
     /**
@@ -150,16 +157,16 @@ public class History_MainPanel extends JPanel {
     /**
      * 독립 실행 테스트
      */
-    public static void main(String[] args) {
-        SwingUtilities.invokeLater(() -> {
-            JFrame frame = new JFrame("거래내역 테스트");
-            frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-            frame.setSize(1100, 700);
-            frame.setLocationRelativeTo(null);
-            
-            History_MainPanel panel = new History_MainPanel("user_01");
-            frame.add(panel);
-            frame.setVisible(true);
-        });
-    }
+//    public static void main(String[] args) {
+//        SwingUtilities.invokeLater(() -> {
+//            JFrame frame = new JFrame("거래내역 테스트");
+//            frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+//            frame.setSize(1100, 700);
+//            frame.setLocationRelativeTo(null);
+//            
+//            History_MainPanel panel = new History_MainPanel("user_01");
+//            frame.add(panel);
+//            frame.setVisible(true);
+//        });
+//    }
 }

@@ -31,11 +31,13 @@ public class OpenOrder_MainPanel extends JPanel {
     private final OpenOrderDAO dao;
     private final AssetDAO assetDAO;
     private final String userId;
+    private long sessionId;
     
     private String currentMarket = "ALL";
     
-    public OpenOrder_MainPanel(String userId) {
+    public OpenOrder_MainPanel(String userId,long sessionId) {
         this.userId = userId;
+        this.sessionId = sessionId;
         this.dao = new OpenOrderDAO();
         this.assetDAO = new AssetDAO();
         
@@ -172,6 +174,10 @@ public class OpenOrder_MainPanel extends JPanel {
         refreshData();
     }
     
+    
+    public void setSessionId(long sessionId) {
+        this.sessionId = sessionId;
+    }
     /**
      * 독립 실행 테스트
      */

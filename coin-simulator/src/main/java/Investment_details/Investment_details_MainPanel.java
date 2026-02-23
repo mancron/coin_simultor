@@ -146,8 +146,8 @@ public class Investment_details_MainPanel extends JPanel {
         }
         
         // (필요하다면) 미체결, 거래내역 패널 등에도 전달
-        // if (openOrderPanel != null) openOrderPanel.setSessionId(newSessionId);
-        // if (historyPanel != null) historyPanel.setSessionId(newSessionId);
+         if (openOrderPanel != null) openOrderPanel.setSessionId(newSessionId);
+         if (historyPanel != null) historyPanel.setSessionId(newSessionId);
     }
     /**
      * 독립 실행 테스트
