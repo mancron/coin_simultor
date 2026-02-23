@@ -29,7 +29,7 @@ public class Asset_MainPanel extends JPanel implements UpbitWebSocketDao.TickerL
 
     private final AssetDAO assetDAO;
     private final String   userId;
-    private final long sessionId;
+    private long sessionId;
 
     private List<MyAssetStatusDTO> myAssetList = new ArrayList<>();
     private BigDecimal             krwBalance  = BigDecimal.ZERO;
@@ -53,6 +53,10 @@ public class Asset_MainPanel extends JPanel implements UpbitWebSocketDao.TickerL
 
         // 초기 DB 데이터 로드
         initAssetData();
+    }
+    // 세션 ID 업데이트 메서드 추가
+    public void setSessionId(long sessionId) {
+        this.sessionId = sessionId;
     }
 
     // ── 초기 데이터 로드 ──────────────────────────────────────────
@@ -84,6 +88,7 @@ public class Asset_MainPanel extends JPanel implements UpbitWebSocketDao.TickerL
         refreshUI();
     }
 
+    
     // ── 웹소켓 콜백 ───────────────────────────────────────────────
     @Override
     public void onTickerUpdate(String symbol, String priceStr, String flucStr, String accPriceStr) {

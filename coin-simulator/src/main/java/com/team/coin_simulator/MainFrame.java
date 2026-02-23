@@ -18,13 +18,16 @@ import javax.swing.UIManager;
 import com.team.coin_simulator.Alerts.PriceAlertService;
 import com.team.coin_simulator.Market_Order.OrderPanel;
 import com.team.coin_simulator.Market_Panel.HistoryPanel;
+import com.team.coin_simulator.backtest.BacktestSessionDialog;
 import com.team.coin_simulator.backtest.BacktestTimeControlPanel;
 import com.team.coin_simulator.backtest.BacktestTimeController;
 import com.team.coin_simulator.backtest.CandleChartBacktestAdapter;
+import com.team.coin_simulator.backtest.SessionManager;
 import com.team.coin_simulator.chart.CandleChartPanel;
 import com.team.coin_simulator.orderbook.OrderBookPanel;
 
 import DAO.UpbitWebSocketDao;
+import DTO.SessionDTO;
 import Investment_details.Investment_details_MainPanel;
 import databasetestdata.DownloadDatabase;
 
@@ -116,9 +119,10 @@ public class MainFrame extends JFrame implements TimeController.TimeChangeListen
                 // 반드시 EDT(Event Dispatch Thread)에서 실행되도록 invokeLater 사용
                 SwingUtilities.invokeLater(() -> {
                     // 예시: 현재 선택된 코인의 차트를 다시 그리기
-                    // if (chartPanel != null) {
-                    //     chartPanel.refreshChartData(); 
-                    // }
+                	if (investmentPanel != null) {
+                        investmentPanel.setSessionId(currentSessionId); // 주석 해제!
+                        investmentPanel.refreshAll(); 
+                    }
                     System.out.println("[MainFrame] UI 데이터 갱신 완료");
                 });
                 
@@ -167,17 +171,31 @@ public class MainFrame extends JFrame implements TimeController.TimeChangeListen
         JPanel panel = new JPanel(new BorderLayout());
         panel.setBackground(Color.WHITE);
         
-        // 왼쪽: 시간 제어 패널
-//        timeControlPanel = new TimeControlPanel();
-//        panel.add(timeControlPanel, BorderLayout.CENTER);
-        
+        // 왼쪽: 백테스트 컨트롤 패널
         backtestControlPanel = new BacktestTimeControlPanel(this, currentUserId);
         panel.add(backtestControlPanel, BorderLayout.CENTER);
         
-        // 오른쪽: 화면 전환 버튼
+        // 오른쪽: 화면 전환 및 세션 버튼 묶음
         JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 15, 10));
         buttonPanel.setBackground(Color.WHITE);
         
+        // ==========================================
+        // [추가] 세션 선택 버튼 
+        // ==========================================
+        JButton btnSelectSession = new JButton("백테스트 세션 선택");
+        btnSelectSession.setFont(new Font("맑은 고딕", Font.BOLD, 13));
+        btnSelectSession.setBackground(new Color(155, 89, 182)); // 보라색 계열 (예시)
+        btnSelectSession.setForeground(Color.WHITE);
+        btnSelectSession.setFocusPainted(false);
+        btnSelectSession.setPreferredSize(new Dimension(150, 35));
+        btnSelectSession.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        
+        btnSelectSession.addActionListener(e -> {
+            openSessionDialog(); // 방금 만든 메서드 호출!
+        });
+        buttonPanel.add(btnSelectSession);
+        // ==========================================
+
         btnToggleView = new JButton("투자내역 보기");
         btnToggleView.setFont(new Font("맑은 고딕", Font.BOLD, 13));
         btnToggleView.setForeground(Color.WHITE);
@@ -318,6 +336,49 @@ public class MainFrame extends JFrame implements TimeController.TimeChangeListen
     private void initWebSocket() {
         if (timeController.isRealtimeMode()) {
             UpbitWebSocketDao.getInstance().start();
+        }
+    }
+    
+    /**
+     * [추가] 백테스팅 세션을 선택하고 UI에 적용하는 메서드
+     */
+    public void openSessionDialog() {
+        // 1. 다이얼로그 띄우기
+        BacktestSessionDialog dialog = new BacktestSessionDialog(this, currentUserId);
+        dialog.setVisible(true); // 여기서 사용자가 선택할 때까지 대기
+
+        // 2. 창이 닫힌 후 선택된 세션 가져오기
+        SessionDTO selectedSession = dialog.getSelectedSession();
+
+        if (selectedSession != null) {
+            // 3. 전역 매니저 및 현재 프레임 변수 업데이트
+            SessionManager.getInstance().setCurrentSession(selectedSession);
+            this.currentSessionId = selectedSession.getSessionId();
+            
+            System.out.println("[MainFrame] 선택된 세션 ID: " + currentSessionId);
+
+            // 4. 각 패널들에게 바뀐 세션 ID를 알려주고 새로고침
+            if (investmentPanel != null) {
+                // investmentPanel.setSessionId(currentSessionId); 
+                investmentPanel.refreshAll(); // 새로고침
+            }
+            
+            // 5. [수정됨] 시간 컨트롤러 초기화 및 백테스팅 엔진 시작!
+            java.time.LocalDateTime startTime = selectedSession.getStartSimTime().toLocalDateTime();
+            java.time.LocalDateTime currentSimTime = selectedSession.getCurrentSimTime().toLocalDateTime();
+            java.time.LocalDateTime endTime = startTime.plusMonths(1); // 세션 종료 시각 계산
+
+            // 5-1. TimeController: 실시간 웹소켓 종료 및 차트 기준 시간 변경
+            timeController.switchToBacktestMode(currentSimTime); 
+            
+            // 5-2. BacktestTimeController: 1초마다 시계바늘을 움직이는 엔진 시작
+            BacktestTimeController.getInstance().startSession(
+                currentUserId, 
+                currentSessionId, 
+                startTime, 
+                currentSimTime, 
+                endTime
+            );
         }
     }
     

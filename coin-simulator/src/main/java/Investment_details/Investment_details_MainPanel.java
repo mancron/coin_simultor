@@ -40,7 +40,7 @@ public class Investment_details_MainPanel extends JPanel {
     private ProfitLoss_MainPanel profitLossPanel;
     private History_MainPanel historyPanel;
     private OpenOrder_MainPanel openOrderPanel;
-    private final long sessionId; 
+    private long sessionId; 
     
     private final String userId;
     
@@ -134,7 +134,21 @@ public class Investment_details_MainPanel extends JPanel {
         historyPanel.refresh();
         openOrderPanel.refresh();
     }
-    
+
+
+    public void setSessionId(long newSessionId) {
+        this.sessionId = newSessionId;
+        
+        // 1. 자산 패널에 세션 ID 전달 및 새로고침
+        if (assetPanel != null) {
+            assetPanel.setSessionId(newSessionId); // Asset_MainPanel에 이 메서드는 추가해야 합니다.
+            assetPanel.initAssetData(); // <--- refreshData() 대신 기존에 있던 initAssetData() 호출!
+        }
+        
+        // (필요하다면) 미체결, 거래내역 패널 등에도 전달
+        // if (openOrderPanel != null) openOrderPanel.setSessionId(newSessionId);
+        // if (historyPanel != null) historyPanel.setSessionId(newSessionId);
+    }
     /**
      * 독립 실행 테스트
      */
