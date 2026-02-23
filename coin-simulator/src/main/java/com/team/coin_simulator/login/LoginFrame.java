@@ -302,7 +302,7 @@ public class LoginFrame extends JFrame {
         btn.setForeground(Color.WHITE);
         btn.setFont(fontBold);
         btn.setFocusPainted(false);
-        btn.setBorderPainted(false);
+        btn.setBorderPainted(false);	
         btn.setOpaque(true);
         btn.setAlignmentX(Component.CENTER_ALIGNMENT);
     }

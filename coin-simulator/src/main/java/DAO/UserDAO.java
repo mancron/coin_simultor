@@ -314,9 +314,25 @@ public class UserDAO {
 
     // 수정 (✅)
     public static boolean insertUser(UserDTO user, String phone) {
-		return false;
-        // 실제 INSERT 쿼리 실행
-        // phone_number 필수 체크
-        // 성공/실패 로깅
+
+        String sql =
+            "INSERT INTO users (user_id, password, nickname, phone_number) " +
+            "VALUES (?, ?, ?, ?)";
+
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+
+            pstmt.setString(1, user.getUserId());
+            pstmt.setString(2, user.getPassword());
+            pstmt.setString(3, user.getNickname());
+            pstmt.setString(4, phone);
+
+            return pstmt.executeUpdate() == 1;
+
+        } catch (SQLException e) {
+            e.printStackTrace(); // ⭐ 콘솔에 실패 원인 찍힘
+        }
+
+        return false;
     }
 }
