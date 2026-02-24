@@ -263,8 +263,17 @@ public class CandleChartPanel extends JPanel {
         if (rawList.isEmpty() && liveCandle == null) return emptyDataset(market);
 
         Collections.reverse(rawList);
-        List<CandleDTO> resampled = resampleCandles(rawList, timeframe);
-        if (liveCandle != null) resampled.add(liveCandle);
+        
+        // DAO에서 반환된 리스트가 불변(Immutable)일 수 있으므로 새로운 리스트로 감쌉니다.
+        List<CandleDTO> mutableRawList = new ArrayList<>(rawList);
+
+        // [수정됨] 리샘플링을 하기 '전'에 liveCandle을 원본 1분봉 리스트에 추가합니다.
+        // 이렇게 하면 resampleCandles 내부에서 현재 진행 중인 시간 블록에 올바르게 병합(Merge)됩니다.
+        if (liveCandle != null) {
+            mutableRawList.add(liveCandle);
+        }
+
+        List<CandleDTO> resampled = resampleCandles(mutableRawList, timeframe);
         return buildDataset(market, resampled);
     }
 
@@ -464,43 +473,7 @@ public class CandleChartPanel extends JPanel {
         // TODO: updateLivePrice(UpbitAPI.getTicker(currentMarket));
     }
 
-    /**
-     * 외부(WebSocket 콜백 등)에서 현재가를 주입합니다.
-     * 백테스팅 모드에서는 무시됩니다.
-     */
-    public void updateLivePrice(double price) {
-        if (backtestTargetTime != null) return; // 백테스팅 중 무시
 
-        LocalDateTime now = LocalDateTime.now();
-
-        if (liveCandle == null) {
-            liveCandle = createNewLiveCandle(price, now);
-            liveCandleEndTime = calculateCandleEndTime(now);
-        }
-
-        if (now.isAfter(liveCandleEndTime)) {
-            finalizeLiveCandle();
-            liveCandle = createNewLiveCandle(price, now);
-            liveCandleEndTime = calculateCandleEndTime(now);
-        }
-
-        liveCandle.setTradePrice(price);
-        liveCandle.setHighPrice(Math.max(liveCandle.getHighPrice(), price));
-        liveCandle.setLowPrice(Math.min(liveCandle.getLowPrice(), price));
-
-        SwingUtilities.invokeLater(() -> {
-            OHLCDataset dataset = createDatasetWithLiveCandle(currentMarket, currentTimeframe);
-            plot.setDataset(dataset);
-            drawCurrentPriceDashLine(dataset);
-        });
-    }
-
-    private void finalizeLiveCandle() {
-        if (liveCandle == null) return;
-        liveCandle.setUnit(1); // 1분봉으로 저장
-        candleDAO.insertCandles(Collections.singletonList(liveCandle));
-        liveCandle = null;
-    }
 
     private CandleDTO createNewLiveCandle(double price, LocalDateTime time) {
         CandleDTO c = new CandleDTO();
