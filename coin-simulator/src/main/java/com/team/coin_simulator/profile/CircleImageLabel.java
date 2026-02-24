@@ -3,6 +3,7 @@ package com.team.coin_simulator.profile;
 import javax.swing.*;
 import java.awt.*;
 import java.awt.geom.Ellipse2D;
+import java.io.File;
 
 public class CircleImageLabel extends JLabel {
     private final int size;
@@ -21,8 +22,25 @@ public class CircleImageLabel extends JLabel {
             repaint();
             return;
         }
-        ImageIcon icon = new ImageIcon(path);
-        image = icon.getImage().getScaledInstance(size, size, Image.SCALE_SMOOTH);
+
+        try {
+            File f = new File(path);
+            System.out.println("[CircleImageLabel] load path=" + path + " exists=" + f.exists());
+
+            java.awt.image.BufferedImage bi = javax.imageio.ImageIO.read(f);
+            if (bi == null) {
+                System.out.println("[CircleImageLabel] ImageIO.read returned null (unsupported/failed)");
+                image = null;
+            } else {
+                image = bi.getScaledInstance(size, size, Image.SCALE_SMOOTH);
+            }
+        } catch (Exception e) {
+            System.out.println("[CircleImageLabel] load failed: " + e.getMessage());
+            e.printStackTrace();
+            image = null;
+        }
+
+        revalidate();
         repaint();
     }
 

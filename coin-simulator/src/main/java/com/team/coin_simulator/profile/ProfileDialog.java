@@ -82,46 +82,65 @@ public class ProfileDialog extends JDialog {
     private void loadUser() {
         try {
             UserDTO user = UserDAO.getUserById(userId);
+
             String nick = (user != null && user.getNickname() != null && !user.getNickname().isBlank())
                     ? user.getNickname()
                     : userId;
-
             lblNickname.setText(nick);
-            profileImage.setImagePath(user != null ? user.getProfileImagePath() : null);
+
+            String path = (user != null) ? user.getProfileImagePath() : null;
+
+            // ✅ 원인 추적 로그
+            System.out.println("[ProfileDialog] loadUser userId=" + userId);
+            System.out.println("[ProfileDialog] loadUser profile_image_path=" + path);
+
+            profileImage.setImagePath(path);
 
         } catch (Exception e) {
+            e.printStackTrace();
             lblNickname.setText(userId);
             profileImage.setImagePath(null);
         }
     }
 
     private void pickAndSavePhoto() {
+        FileDialog fd = new FileDialog((Frame) SwingUtilities.getWindowAncestor(this), "프로필 사진 선택", FileDialog.LOAD);
+        fd.setFilenameFilter((dir, name) -> {
+            String n = name.toLowerCase();
+            return n.endsWith(".png") || n.endsWith(".jpg") || n.endsWith(".jpeg")
+                    || n.endsWith(".gif") || n.endsWith(".bmp") || n.endsWith(".webp");
+        });
+        fd.setVisible(true);
 
-        // ✅ 윈도우 파일탐색기 열림
-        JFileChooser chooser = new JFileChooser();
-        chooser.setDialogTitle("프로필 사진 선택");
-        chooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
+        String file = fd.getFile();
+        String dir = fd.getDirectory();
+        if (file == null || dir == null) return; // 취소
 
-        int result = chooser.showOpenDialog(this);
+        String path = dir + file;
 
-        // 취소 누르면 끝
-        if (result != JFileChooser.APPROVE_OPTION) return;
+        // ✅ 파일 존재 체크 로그
+        File f = new File(path);
+        System.out.println("[ProfileDialog] selected path=" + path);
+        System.out.println("[ProfileDialog] exists=" + f.exists() + ", length=" + (f.exists() ? f.length() : -1));
 
-        File file = chooser.getSelectedFile();
-        String path = file.getAbsolutePath();
-
-        // ✅ UI 즉시 반영 (동그라미 이미지)
+        // UI 반영
         profileImage.setImagePath(path);
 
-        // ✅ DB 저장 (네 UserDAO 메서드 이미 있음)
-        boolean ok = DAO.UserDAO.updateProfileImagePath(userId, path);
+        // DB 저장
+        boolean ok = UserDAO.updateProfileImagePath(userId, path);
+        System.out.println("[ProfileDialog] updateProfileImagePath ok=" + ok);
 
         if (!ok) {
-            JOptionPane.showMessageDialog(this,
-                    "사진 경로 DB 저장 실패",
-                    "오류",
-                    JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(this, "사진 경로 DB 저장 실패", "오류", JOptionPane.ERROR_MESSAGE);
+            return;
         }
+
+        // ✅ DB에서 바로 다시 읽어서 정말 저장됐는지 확인 + 반영
+        UserDTO re = UserDAO.getUserById(userId);
+        String dbPath = (re != null) ? re.getProfileImagePath() : null;
+        System.out.println("[ProfileDialog] dbPath(after update)=" + dbPath);
+
+        profileImage.setImagePath(dbPath);
     }
 
     private void changeNickname() {
