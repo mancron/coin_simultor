@@ -349,13 +349,9 @@ public class MainFrame extends JFrame {
     //  WebSocket / 리소스
     // ════════════════════════════════════════════════
     
-    //프로필
+    //프로필 버튼 클릭시 열리게
     private void openProfile() {
-        // ✅ 여기 한 줄을 너희가 이미 만든 "프로필 버튼 기능" 호출로 바꿔 끼우면 됨
-        // 예: new MyProfileFrame(currentUserId);
-        // 예: new ProfileDialog(this, currentUserId).setVisible(true);
-
-        javax.swing.JOptionPane.showMessageDialog(this, "프로필 기능 연결(openProfile) 필요");
+        new com.team.coin_simulator.profile.ProfileDialog(this, currentUserId).setVisible(true);
     }
     
     private void initWebSocket() {

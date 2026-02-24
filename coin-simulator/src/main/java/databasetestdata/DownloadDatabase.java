@@ -6,6 +6,7 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
+import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -136,6 +137,11 @@ public class DownloadDatabase {
 
                 } catch (Exception e) {
                     System.err.println("\n[Error] " + market + " 업데이트 중단: " + e.getMessage());
+                    try {
+                        conn.rollback(); // 치명적: 중간에 끊기면 DB에 쓰지 않고 전부 취소하여 갭(Gap) 방지
+                    } catch (SQLException ex) {
+                        ex.printStackTrace();
+                    }
                     break; 
                 }
             }
@@ -208,8 +214,6 @@ public class DownloadDatabase {
                 try {
                     String jsonResponse = fetchCandles(market, unit, 200, toDate);
                     JSONArray candles = new JSONArray(jsonResponse);
-
-                    // ... (이하 기존 코드와 동일) ...
                     
                     if (candles.isEmpty()) {
                         break; 
