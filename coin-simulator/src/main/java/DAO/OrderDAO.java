@@ -3,6 +3,9 @@ package DAO;
 import com.team.coin_simulator.DBConnection;
 import DTO.OrderDTO;
 import java.sql.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import java.math.BigDecimal;
 
 public class OrderDAO {
@@ -49,11 +52,17 @@ public class OrderDAO {
                 pstmt.executeUpdate();
             }
             
-            conn.commit();
+            conn.commit(); //모든 작업이 성공해야 실제 DB에 기록됨
+            System.out.println(">> [DB] 주문 및 자산 업데이트 완료 (Commit)");
             return true;
             
         } catch (Exception e) {
-            if (conn != null) try { conn.rollback(); } catch(SQLException ex) {}
+            if (conn != null) {
+                try { 
+                    conn.rollback(); //하나라도 실패하면 모두 되돌림
+                    System.err.println(">> [DB] 오류 발생으로 롤백되었습니다.");
+                } catch(SQLException ex) { ex.printStackTrace(); }
+            }
             e.printStackTrace();
             return false;
         } finally {
@@ -89,7 +98,12 @@ public class OrderDAO {
             try (PreparedStatement pstmt = conn.prepareStatement(updateOrderSql)) {
                 pstmt.setLong(1, orderId);
                 pstmt.setString(2, userId);
-                if (pstmt.executeUpdate() == 0) throw new SQLException("취소할 수 없는 주문입니다.");
+                
+                int affectedRows = pstmt.executeUpdate();
+                // [핵심] 여기서 0이 나오면 "그런 주문 번호 없는데?" 라는 뜻
+                if (affectedRows == 0) {
+                    throw new SQLException("DB에서 해당 주문번호(" + orderId + ")를 찾을 수 없거나 이미 취소되었습니다.");
+                }
             }
 
             //자산 복구 (동적 코인 할당 및 세션 격리 적용)
@@ -173,7 +187,12 @@ public class OrderDAO {
                 pstmt.setBigDecimal(3, newQty);
                 pstmt.setLong(4, orderId); 
                 pstmt.setString(5, userId);
-                if (pstmt.executeUpdate() == 0) throw new SQLException("정정할 주문이 없습니다.");
+                
+                int affectedRows = pstmt.executeUpdate();
+                //만약 ID가 달라서 업데이트가 안 됐다면 에러 발생시키기!
+                if (affectedRows == 0) {
+                    throw new SQLException("DB에서 해당 주문번호(" + orderId + ")를 찾을 수 없습니다.");
+                }
             }
 
             conn.commit();
@@ -274,6 +293,15 @@ public class OrderDAO {
             }
 
             conn.commit();
+            System.out.println(">> [DB] 시장가 체결 완료");
+            
+            // 알림 발송
+            String sideKr = order.getSide().equals("BID") ? "매수" : "매도";
+            // 시장가는 100% 체결이므로 "최종 체결" 메시지 구성
+            String alertMsg = String.format("[%s] %s 주문이 최종 체결되었습니다. (단가: %,.0f)", 
+                                            "비트코인", sideKr, tradePrice);
+            System.out.println(alertMsg);
+
             return true;
 
         } catch (SQLException e) {
@@ -283,5 +311,181 @@ public class OrderDAO {
         } finally {
             if (conn != null) try { conn.close(); } catch(SQLException ex) {}
         }
+    }
+    
+    // 자동 체결 검사 및 실행 (백테스팅용)
+    public List<OrderDTO> checkAndExecuteLimitOrders(String market, BigDecimal currentPrice) {
+        
+        // 웹소켓에서 "BTC"만 오면 DB 양식인 "KRW-BTC"로 변경
+        if (!market.startsWith("KRW-")) {
+            market = "KRW-" + market;
+        }
+
+        List<OrderDTO> executedOrders = new ArrayList<>();
+        Connection conn = null;
+
+        try {
+            conn = com.team.coin_simulator.DBConnection.getConnection();
+            conn.setAutoCommit(false); // 트랜잭션 시작
+
+            String selectSql = "SELECT * FROM orders WHERE market = ? AND status = 'WAIT'";
+            
+            try (PreparedStatement pstmt = conn.prepareStatement(selectSql)) {
+                pstmt.setString(1, market);
+                try (ResultSet rs = pstmt.executeQuery()) {
+                    while (rs.next()) {
+                        long orderId = rs.getLong("order_id");
+                        String userId = rs.getString("user_id");
+                        long sessionId = rs.getLong("session_id"); // 💡 세션 누수 방지를 위해 꺼내옴!
+                        String side = rs.getString("side");
+                        BigDecimal targetPrice = rs.getBigDecimal("original_price");
+                        BigDecimal volume = rs.getBigDecimal("original_volume");
+
+                        boolean shouldExecute = false;
+
+                        // 체결 조건 검사
+                        if ("BID".equals(side) && currentPrice.compareTo(targetPrice) <= 0) {
+                            shouldExecute = true;
+                        } else if ("ASK".equals(side) && currentPrice.compareTo(targetPrice) >= 0) {
+                            shouldExecute = true;
+                        }
+
+                        if (shouldExecute) {
+                            // [1] 주문 상태 변경
+                            try (PreparedStatement updateOrder = conn.prepareStatement(
+                                    "UPDATE orders SET status = 'DONE', remaining_volume = 0 WHERE order_id = ?")) {
+                                updateOrder.setLong(1, orderId);
+                                updateOrder.executeUpdate();
+                            }
+
+                            // =======================================================
+                            // 💡 [핵심] 세션 ID(session_id)를 포함하여 완벽하게 격리된 자산 업데이트!
+                            // =======================================================
+                            BigDecimal totalOrderPrice = targetPrice.multiply(volume);
+                            String coinSymbol = market.replace("KRW-", ""); // "BTC" 추출
+
+                            if ("BID".equals(side)) {
+                                // [매수] 원화 묶인돈(locked) 차감 -> 코인 잔고(balance) 증가
+                                try (PreparedStatement updateKrw = conn.prepareStatement(
+                                        "UPDATE assets SET locked = locked - ? WHERE user_id = ? AND session_id = ? AND currency = 'KRW'")) {
+                                    updateKrw.setBigDecimal(1, totalOrderPrice);
+                                    updateKrw.setString(2, userId);
+                                    updateKrw.setLong(3, sessionId);
+                                    updateKrw.executeUpdate();
+                                }
+                                try (PreparedStatement updateCoin = conn.prepareStatement(
+                                        "INSERT INTO assets (user_id, session_id, currency, balance, locked) VALUES (?, ?, ?, ?, 0) " +
+                                        "ON DUPLICATE KEY UPDATE balance = balance + ?")) {
+                                    updateCoin.setString(1, userId);
+                                    updateCoin.setLong(2, sessionId);
+                                    updateCoin.setString(3, coinSymbol);
+                                    updateCoin.setBigDecimal(4, volume);
+                                    updateCoin.setBigDecimal(5, volume);
+                                    updateCoin.executeUpdate();
+                                }
+                            } else {
+                                // [매도] 코인 묶인돈(locked) 차감 -> 원화 잔고(balance) 증가
+                                try (PreparedStatement updateCoin = conn.prepareStatement(
+                                        "UPDATE assets SET locked = locked - ? WHERE user_id = ? AND session_id = ? AND currency = ?")) {
+                                    updateCoin.setBigDecimal(1, volume);
+                                    updateCoin.setString(2, userId);
+                                    updateCoin.setLong(3, sessionId);
+                                    updateCoin.setString(4, coinSymbol);
+                                    updateCoin.executeUpdate();
+                                }
+                                try (PreparedStatement updateKrw = conn.prepareStatement(
+                                        "UPDATE assets SET balance = balance + ? WHERE user_id = ? AND session_id = ? AND currency = 'KRW'")) {
+                                    updateKrw.setBigDecimal(1, totalOrderPrice);
+                                    updateKrw.setString(2, userId);
+                                    updateKrw.setLong(3, sessionId);
+                                    updateKrw.executeUpdate();
+                                }
+                            }
+
+                            // [3] 체결 내역(executions) 추가
+                            try (PreparedStatement insertExec = conn.prepareStatement(
+                                    "INSERT INTO executions (order_id, user_id, market, side, price, volume, total_price, fee) " +
+                                    "VALUES (?, ?, ?, ?, ?, ?, ?, 0)")) {
+                                insertExec.setLong(1, orderId);
+                                insertExec.setString(2, userId);
+                                insertExec.setString(3, market);
+                                insertExec.setString(4, side);
+                                insertExec.setBigDecimal(5, targetPrice);
+                                insertExec.setBigDecimal(6, volume);
+                                insertExec.setBigDecimal(7, totalOrderPrice);
+                                insertExec.executeUpdate();
+                            }
+
+                            // 알림용 데이터 담기
+                            OrderDTO executed = new OrderDTO();
+                            executed.setOrderId(orderId);
+                            executed.setSide(side);
+                            executed.setOriginalPrice(targetPrice);
+                            executed.setOriginalVolume(volume);
+                            executedOrders.add(executed);
+                        }
+                    }
+                }
+            }
+            conn.commit(); // 모두 성공 시 확정
+        } catch (Exception e) {
+            if (conn != null) try { conn.rollback(); } catch(Exception ex) {}
+            e.printStackTrace();
+        } finally {
+            if (conn != null) try { conn.close(); } catch(Exception ex) {}
+        }
+        return executedOrders;
+    }
+
+    //유저의 자산(Balance, Locked) 정보를 가져오는 메서드 (하위 호환용)
+    @Deprecated
+    public void getUserAssets(String userId, Map<String, BigDecimal> balanceMap, Map<String, BigDecimal> lockedMap) {
+        String sql = "SELECT currency, balance, locked FROM assets WHERE user_id = ?";
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            
+            pstmt.setString(1, userId);
+            try (ResultSet rs = pstmt.executeQuery()) {
+                while (rs.next()) {
+                    String curr = rs.getString("currency");
+                    balanceMap.put(curr, rs.getBigDecimal("balance"));
+                    lockedMap.put(curr, rs.getBigDecimal("locked"));
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println("자산 정보 로드 실패: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    //유저의 미체결 대기 주문(WAIT) 목록을 가져오는 메서드 (하위 호환용)
+    @Deprecated
+    public List<OrderDTO> getOpenOrders(String userId) {
+        List<OrderDTO> openOrders = new ArrayList<>();
+        String sql = "SELECT * FROM orders WHERE user_id = ? AND status = 'WAIT'";
+        
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            
+            pstmt.setString(1, userId);
+            try (ResultSet rs = pstmt.executeQuery()) {
+                while (rs.next()) {
+                    OrderDTO order = new OrderDTO();
+                    order.setOrderId(rs.getLong("order_id"));
+                    order.setSide(rs.getString("side"));
+                    order.setOriginalPrice(rs.getBigDecimal("original_price"));
+                    order.setOriginalVolume(rs.getBigDecimal("original_volume"));
+                    order.setRemainingVolume(rs.getBigDecimal("remaining_volume"));
+                    order.setStatus(rs.getString("status"));
+                    order.setMarket(rs.getString("market")); 
+                    
+                    openOrders.add(order);
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println("미체결 주문 로드 실패: " + e.getMessage());
+            e.printStackTrace();
+        }
+        return openOrders;
     }
 }
