@@ -73,4 +73,14 @@ public class UserDTO implements Serializable {
         return "UserDTO [userId=" + userId + ", nickname=" + nickname + 
                ", provider=" + authProvider + "]"; 
     }
+
+	public void setPhoneNumber(String string) {
+		// TODO Auto-generated method stub
+		
+	}
+
+	public void setProfileImagePath(String string) {
+		// TODO Auto-generated method stub
+		
+	}
 }
