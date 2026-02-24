@@ -8,7 +8,6 @@ import java.util.ArrayList;
 import java.util.List;
 
 import com.team.coin_simulator.DBConnection;
-
 import DTO.OrderDTO;
 
 /**
@@ -16,24 +15,20 @@ import DTO.OrderDTO;
  */
 public class OpenOrderDAO {
     
-    /**
-     * 사용자의 미체결 주문 목록 조회
-     * 
-     * @param userId 사용자 ID
-     * @return 미체결 주문 리스트
-     */
-    public List<OrderDTO> getOpenOrders(String userId) {
+    // 1. 전체 조회 (세션 ID 추가)
+    public List<OrderDTO> getOpenOrders(String userId, long sessionId) {
         List<OrderDTO> list = new ArrayList<>();
         
         String sql = 
             "SELECT * FROM orders " +
-            "WHERE user_id = ? AND status = 'WAIT' " +
+            "WHERE user_id = ? AND session_id = ? AND status = 'WAIT' " + // 💡 조건 추가
             "ORDER BY created_at DESC";
         
         try (Connection conn = DBConnection.getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             
             pstmt.setString(1, userId);
+            pstmt.setLong(2, sessionId); // 💡 파라미터 매핑
             
             try (ResultSet rs = pstmt.executeQuery()) {
                 while (rs.next()) {
@@ -48,22 +43,21 @@ public class OpenOrderDAO {
         return list;
     }
     
-    /**
-     * 특정 마켓의 미체결 주문 조회
-     */
-    public List<OrderDTO> getOpenOrdersByMarket(String userId, String market) {
+    // 2. 특정 마켓 미체결 조회 (세션 ID 추가)
+    public List<OrderDTO> getOpenOrdersByMarket(String userId, long sessionId, String market) {
         List<OrderDTO> list = new ArrayList<>();
         
         String sql = 
             "SELECT * FROM orders " +
-            "WHERE user_id = ? AND market = ? AND status = 'WAIT' " +
+            "WHERE user_id = ? AND session_id = ? AND market = ? AND status = 'WAIT' " + // 💡 조건 추가
             "ORDER BY created_at DESC";
         
         try (Connection conn = DBConnection.getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             
             pstmt.setString(1, userId);
-            pstmt.setString(2, market);
+            pstmt.setLong(2, sessionId); // 💡 파라미터 매핑
+            pstmt.setString(3, market);
             
             try (ResultSet rs = pstmt.executeQuery()) {
                 while (rs.next()) {
@@ -78,12 +72,6 @@ public class OpenOrderDAO {
         return list;
     }
     
-    /**
-     * 특정 주문 취소
-     * 
-     * @param orderId 주문 ID
-     * @return 성공 여부
-     */
     public boolean cancelOrder(long orderId) {
         String sql = "UPDATE orders SET status = 'CANCEL' WHERE order_id = ? AND status = 'WAIT'";
         
@@ -92,7 +80,6 @@ public class OpenOrderDAO {
             
             pstmt.setLong(1, orderId);
             int affected = pstmt.executeUpdate();
-            
             return affected > 0;
             
         } catch (SQLException e) {
@@ -101,19 +88,15 @@ public class OpenOrderDAO {
         }
     }
     
-    /**
-     * 사용자의 모든 미체결 주문 일괄 취소
-     * 
-     * @param userId 사용자 ID
-     * @return 취소된 주문 수
-     */
-    public int cancelAllOrders(String userId) {
-        String sql = "UPDATE orders SET status = 'CANCEL' WHERE user_id = ? AND status = 'WAIT'";
+    //3. 일괄 취소 (세션 ID 추가)
+    public int cancelAllOrders(String userId, long sessionId) {
+        String sql = "UPDATE orders SET status = 'CANCEL' WHERE user_id = ? AND session_id = ? AND status = 'WAIT'"; // 💡 조건 추가
         
         try (Connection conn = DBConnection.getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             
             pstmt.setString(1, userId);
+            pstmt.setLong(2, sessionId); // 💡 파라미터 매핑
             return pstmt.executeUpdate();
             
         } catch (SQLException e) {
@@ -122,9 +105,6 @@ public class OpenOrderDAO {
         }
     }
     
-    /**
-     * ResultSet을 OrderDTO로 매핑
-     */
     private OrderDTO mapResultSetToDTO(ResultSet rs) throws SQLException {
         OrderDTO dto = new OrderDTO();
         

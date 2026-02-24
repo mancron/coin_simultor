@@ -76,9 +76,9 @@ public class Investment_details_MainPanel extends JPanel {
         // openOrderPanel = new OpenOrder_MainPanel(userId, sessionId);
         
         // 현재는 기존 코드 유지 (해당 패널들도 수정했다면 위 주석처럼 변경)
-        profitLossPanel = new ProfitLoss_MainPanel(userId);
-        historyPanel = new History_MainPanel(userId);
-        openOrderPanel = new OpenOrder_MainPanel(userId);
+        profitLossPanel = new ProfitLoss_MainPanel(userId); // (이건 아직 안 바꿨으니 그대로 둡니다)
+        historyPanel = new History_MainPanel(userId, sessionId);    //sessionId 추가!
+        openOrderPanel = new OpenOrder_MainPanel(userId, sessionId); //sessionId 추가!
         
         contentPanel.add(assetPanel, CARD_ASSET);
         contentPanel.add(profitLossPanel, CARD_PROFIT_LOSS);
@@ -141,14 +141,26 @@ public class Investment_details_MainPanel extends JPanel {
         
         // 1. 자산 패널에 세션 ID 전달 및 새로고침
         if (assetPanel != null) {
-            assetPanel.setSessionId(newSessionId); // Asset_MainPanel에 이 메서드는 추가해야 합니다.
-            assetPanel.initAssetData(); // <--- refreshData() 대신 기존에 있던 initAssetData() 호출!
+            assetPanel.setSessionId(newSessionId); 
+            assetPanel.initAssetData(); 
         }
+        
+        //2. 미체결 패널에 세션 ID 전달 및 새로고침
+        if (openOrderPanel != null) {
+            openOrderPanel.setSessionId(newSessionId);
+            openOrderPanel.refresh();
+        }
+        
+        //3. 거래내역 패널에 세션 ID 전달 및 새로고침
+        if (historyPanel != null) {
+            historyPanel.setSessionId(newSessionId);
+            historyPanel.refresh();
+        }
+    }
         
         // (필요하다면) 미체결, 거래내역 패널 등에도 전달
         // if (openOrderPanel != null) openOrderPanel.setSessionId(newSessionId);
         // if (historyPanel != null) historyPanel.setSessionId(newSessionId);
-    }
     /**
      * 독립 실행 테스트
      */

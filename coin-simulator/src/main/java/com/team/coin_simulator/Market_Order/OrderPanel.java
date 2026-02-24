@@ -2,7 +2,7 @@ package com.team.coin_simulator.Market_Order;
 
 import DAO.*;
 import DTO.*;
-import com.team.coin_simulator.CoinConfig; // 코인 한글명 가져오기
+import com.team.coin_simulator.CoinConfig; 
 import com.team.coin_simulator.Market_Panel.*;
 import javax.swing.*;
 import javax.swing.event.DocumentEvent;
@@ -10,16 +10,22 @@ import javax.swing.event.DocumentListener;
 import java.awt.*;
 import java.awt.event.ItemEvent;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.*;
 import java.util.List;
 
 public class OrderPanel extends JPanel implements UpbitWebSocketDao.TickerListener {
     
     private OrderDAO orderDAO = new OrderDAO();
-    private Map<String, BigDecimal> mockBalance = new HashMap<>();
-    private Map<String, BigDecimal> mockLocked = new HashMap<>();
+    private AssetDAO assetDAO = new AssetDAO(); // 💡 진짜 자산을 불러올 DAO 추가
+    private OpenOrderDAO openOrderDAO = new OpenOrderDAO();
+    
+    // 💡 가짜(mock) 데이터 삭제하고, DB에서 불러온 진짜 잔고를 담을 맵
+    private Map<String, BigDecimal> realBalance = new HashMap<>();
+    private Map<String, BigDecimal> realLocked = new HashMap<>();
+    
     private List<OrderDTO> openOrders = new ArrayList<>();
-    private Map<Long, String> orderCoinMap = new HashMap<>();//각 주문이 어떤 코인인지 기억
+    private Map<Long, String> orderCoinMap = new HashMap<>();
 
     private CardLayout cardLayout;
     private JPanel inputCardPanel, editListPanel;
@@ -27,38 +33,30 @@ public class OrderPanel extends JPanel implements UpbitWebSocketDao.TickerListen
     private JLabel valAvailable, valTotal;
     private JButton btnAction;
     private JLabel lblSelectedCoinInfo; 
-    private JLabel lblMarketUnit;     
+    private JLabel lblMarketUnit;       
     private JComboBox<String> filterComboBox;
-    private boolean isUpdatingComboBox = false; // 무한 루프 방지용 플래그
+    private boolean isUpdatingComboBox = false; 
 
     private String userId;
+    private long sessionId = 1L; // 💡 현재 세션 ID 필드 추가
     
-    private JLabel valExpected; // 예상 체결 수량/금액 표시 라벨
-    private String selectedCoinCode = "BTC"; // 기본값
-    private BigDecimal currentSelectedPrice = BigDecimal.ZERO; // HistoryPanel에서 받은 현재가 저장
+    private JLabel valExpected; 
+    private String selectedCoinCode = "BTC"; 
+    private BigDecimal currentSelectedPrice = BigDecimal.ZERO; 
     private int sideIdx = 0;
     private boolean isLimitMode = true;
-    //코인 최신 가격 기록
     private Map<String, BigDecimal> latestPrices = new java.util.concurrent.ConcurrentHashMap<>();
 
     private final Color COLOR_BID = new Color(200, 30, 30);
     private final Color COLOR_ASK = new Color(30, 70, 200);
     
-    
     public OrderPanel(String userId) {
-    	this.userId = userId;
-    	
-        // 1. 초기 데이터 및 배경 설정
-        mockBalance.put("KRW", new BigDecimal("100000000")); // 테스트용 1억 세팅
-        mockBalance.put("BTC", new BigDecimal("0.5"));
-        mockLocked.put("KRW", BigDecimal.ZERO);
-        mockLocked.put("BTC", BigDecimal.ZERO);
-
+        this.userId = userId;
+        
         setLayout(new BorderLayout());
         setBackground(Color.WHITE);
         setPreferredSize(new Dimension(350, 600));
 
-        // 2. 상단 탭 (매수/매도/정정)
         JPanel topTabPanel = new JPanel(new GridLayout(1, 3));
         topTabPanel.setBackground(Color.WHITE);
         TabButton btnBid = new TabButton("매수");
@@ -70,7 +68,6 @@ public class OrderPanel extends JPanel implements UpbitWebSocketDao.TickerListen
         topTabPanel.add(btnEdit);
         add(topTabPanel, BorderLayout.NORTH);
 
-        // 3. 메인 거래 패널 구성 (BoxLayout)
         cardLayout = new CardLayout();
         inputCardPanel = new JPanel(cardLayout);
 
@@ -79,14 +76,12 @@ public class OrderPanel extends JPanel implements UpbitWebSocketDao.TickerListen
         tradePanel.setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
         tradePanel.setBackground(Color.WHITE);
 
-        // 현재 어떤 코인을 거래 중인지 보여주는 정보창
         lblSelectedCoinInfo = new JLabel("비트코인 (BTC)");
         lblSelectedCoinInfo.setFont(new Font("맑은 고딕", Font.BOLD, 16));
         lblSelectedCoinInfo.setAlignmentX(Component.CENTER_ALIGNMENT);
         tradePanel.add(lblSelectedCoinInfo);
         tradePanel.add(Box.createVerticalStrut(10));
 
-        // 3-1. 지정가/시장가 모드 선택 버튼
         JPanel modePanel = new JPanel(new GridLayout(1, 2, 5, 0));
         modePanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 40));
         TabButton btnLimit = new TabButton("지정가");
@@ -97,17 +92,14 @@ public class OrderPanel extends JPanel implements UpbitWebSocketDao.TickerListen
         tradePanel.add(modePanel);
         tradePanel.add(Box.createVerticalStrut(20));
 
-        // 3-2. 입력 폼 (지정가/시장가)
         CardLayout tradeCardLayout = new CardLayout();
         JPanel tradeInputPanel = new JPanel(tradeCardLayout);
         tradeInputPanel.add(createLimitForm(), "LIMIT");
         tradeInputPanel.add(createMarketForm(), "MARKET");
         tradePanel.add(tradeInputPanel);
-
-        // 3-3. 중앙 공백 (글루)
+        tradePanel.add(Box.createVerticalStrut(10));
         tradePanel.add(Box.createVerticalGlue());
 
-        // 4. 하단 정보 및 버튼 패널
         Dimension btnSize = new Dimension(340, 50);
 
         JPanel infoContainer = new JPanel();
@@ -116,7 +108,6 @@ public class OrderPanel extends JPanel implements UpbitWebSocketDao.TickerListen
         infoContainer.setMaximumSize(btnSize);
         infoContainer.setAlignmentX(Component.CENTER_ALIGNMENT);
 
-        // 주문 가능 행
         JPanel availRow = new JPanel(new BorderLayout());
         availRow.setBackground(Color.WHITE);
         availRow.add(new JLabel("주문 가능"), BorderLayout.WEST);
@@ -124,7 +115,6 @@ public class OrderPanel extends JPanel implements UpbitWebSocketDao.TickerListen
         valAvailable.setHorizontalAlignment(SwingConstants.RIGHT);
         availRow.add(valAvailable, BorderLayout.CENTER);
 
-        // 주문 총액 행
         JPanel totalRow = new JPanel(new BorderLayout());
         totalRow.setBackground(Color.WHITE);
         totalRow.add(new JLabel("주문 총액"), BorderLayout.WEST);
@@ -137,11 +127,9 @@ public class OrderPanel extends JPanel implements UpbitWebSocketDao.TickerListen
         infoContainer.add(totalRow);
         infoContainer.add(Box.createVerticalStrut(20));
 
-        // [버튼 영역]
         btnAction = new JButton("매수") {
             @Override
             protected void paintComponent(Graphics g) {
-                // 버튼을 마우스로 눌렀을 때(Armed) 살짝 어두워지는 디테일 추가
                 if (getModel().isArmed()) {
                     g.setColor(getBackground().darker());
                 } else {
@@ -155,12 +143,9 @@ public class OrderPanel extends JPanel implements UpbitWebSocketDao.TickerListen
         btnAction.setBackground(COLOR_BID); 
         btnAction.setForeground(Color.WHITE);
         btnAction.setFont(new Font("맑은 고딕", Font.BOLD, 18));
-        
-        // OS의 회색 기본 스킨이 덧칠해지는 것을 완벽하게 차단
         btnAction.setContentAreaFilled(false); 
         btnAction.setOpaque(false); 
         btnAction.setFocusPainted(false);
-        
         btnAction.setPreferredSize(btnSize);
         btnAction.setMinimumSize(btnSize);
         btnAction.setMaximumSize(btnSize);
@@ -169,11 +154,9 @@ public class OrderPanel extends JPanel implements UpbitWebSocketDao.TickerListen
         tradePanel.add(infoContainer);
         tradePanel.add(btnAction);
 
-        // 5. 전체 레이아웃 조립 (정정 리스트 패널)
         JPanel editTabPanel = new JPanel(new BorderLayout());
         editTabPanel.setBackground(Color.WHITE);
 
-        // 필터 선택 영역 (콤보박스)
         JPanel filterPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
         filterPanel.setBackground(Color.WHITE);
         filterPanel.add(new JLabel("코인 필터: "));
@@ -181,14 +164,12 @@ public class OrderPanel extends JPanel implements UpbitWebSocketDao.TickerListen
         filterComboBox = new JComboBox<>(new String[]{"전체"});
         filterComboBox.setBackground(Color.WHITE);
         
-        // 콤보박스 값이 바뀔 때마다 리스트 새로고침
         filterComboBox.addItemListener(e -> {
             if (e.getStateChange() == ItemEvent.SELECTED && !isUpdatingComboBox) {
                 refreshEditList();
             }
         });
         filterPanel.add(filterComboBox);
-
         editTabPanel.add(filterPanel, BorderLayout.NORTH);
 
         editListPanel = new JPanel();
@@ -200,11 +181,10 @@ public class OrderPanel extends JPanel implements UpbitWebSocketDao.TickerListen
         editTabPanel.add(scrollPane, BorderLayout.CENTER);
 
         inputCardPanel.add(tradePanel, "TRADE");
-        inputCardPanel.add(editTabPanel, "EDIT"); // 기존 scrollPane 대신 필터가 포함된 패널 넣기
+        inputCardPanel.add(editTabPanel, "EDIT"); 
 
         add(inputCardPanel, BorderLayout.CENTER);
         
-        // 6. 이벤트 리스너 연결
         DocumentListener updateListener = new DocumentListener() {
             public void insertUpdate(DocumentEvent e) { updateOrderSummary(); }
             public void removeUpdate(DocumentEvent e) { updateOrderSummary(); }
@@ -233,60 +213,80 @@ public class OrderPanel extends JPanel implements UpbitWebSocketDao.TickerListen
 
         btnAction.addActionListener(e -> handleOrderAction());
 
-        // 초기 잔고 표시
-        updateInfoLabel();
-        
-        //실시간 웹소켓 가격 수신을 위해 자신을 리스너로 등록!
+        refreshDBData(); // 💡 초기 구동 시 DB에서 잔고 불러오기
         UpbitWebSocketDao.getInstance().addListener(this);
     }
+    
+    // 💡 [핵심 추가] 세션 변경 시 DB에서 잔고 및 미체결 주문 다시 불러오기
+    public void setSessionId(long sessionId) {
+        this.sessionId = sessionId;
+        refreshDBData();
+    }
+    
+ // 💡 DB와 동기화하는 메서드 (가짜 데이터 대신 진짜 데이터를 읽어옴)
+    private void refreshDBData() {
+        realBalance.clear();
+        realLocked.clear();
+        
+        // 1. 진짜 잔고 불러오기
+        List<AssetDTO> assets = assetDAO.getAllAssets(this.userId, this.sessionId);
+        
+        // 🚨 [여기가 디버깅 핵심!] 이클립스/인텔리제이 하단 콘솔창에 결과를 출력합니다.
+        System.out.println("\n[🔍 OrderPanel DB 조회 테스트]");
+        System.out.println("▶ 조회 요청 ID: " + this.userId);
+        System.out.println("▶ 조회 요청 세션방: " + this.sessionId);
+        System.out.println("▶ DB에서 가져온 자산 개수: " + assets.size() + "개");
+        
+        for (AssetDTO a : assets) {
+            System.out.println("  - " + a.getCurrency() + " 잔고: " + a.getBalance());
+            realBalance.put(a.getCurrency(), a.getBalance());
+            realLocked.put(a.getCurrency(), a.getLocked());
+        }
+        System.out.println("-----------------------------------\n");
+        
+        // 2. 이 세션의 미체결 주문 불러오기
+        openOrders = openOrderDAO.getOpenOrders(this.userId, this.sessionId);
+        orderCoinMap.clear();
+        for (OrderDTO o : openOrders) {
+            orderCoinMap.put(o.getOrderId(), o.getMarket().replace("KRW-", ""));
+        }
+        
+        updateInfoLabel();
+        refreshEditList();
+    }
 
-    // 통신 및 실시간 업데이트 로직 (MainFrame, WebSocket 연동)
-    // MainFrame에서 호출: 사용자가 HistoryPanel에서 다른 코인을 클릭했을 때
     public void setSelectedCoin(String coinSymbol) {
         this.selectedCoinCode = coinSymbol;
-        
-        // 코인의 한글 이름 가져오기
         String krName = CoinConfig.COIN_INFO.getOrDefault(coinSymbol, coinSymbol);
         
         BigDecimal cachedPrice = latestPrices.get(coinSymbol);
         if (cachedPrice != null) {
             this.currentSelectedPrice = cachedPrice;
-            
-            // 상단 라벨 즉시 변경
             if (lblSelectedCoinInfo != null) {
                 lblSelectedCoinInfo.setText(krName + " - 현재가 " + String.format("%,.0f", cachedPrice) + " KRW");
             }
-            
-            // 지정가 모드라면 가격 입력창에 즉시 숫자 꽂아넣기
             if (isLimitMode && priceField != null) {
-                priceField.setText(cachedPrice.toPlainString()); // 깔끔한 숫자로 세팅
+                priceField.setText(cachedPrice.toPlainString());
             }
-            updateOrderSummary(); // 총액도 즉시 계산
-            
+            updateOrderSummary();
         } else {
-            // 아직 한 번도 가격을 못 받았다면 일단 이름만 (금방 들어옵니다)
             if (lblSelectedCoinInfo != null) {
                 lblSelectedCoinInfo.setText(krName + " (" + coinSymbol + ")");
             }
         }
         
-        // 코인이 바뀌었으니 잔고 표시 갱신 (BTC 잔고 -> XRP 잔고 등)
         switchSide(sideIdx, null, null, null); 
         updateInfoLabel(); 
     }
 
-    //WebSocket에서 호출: 실시간 가격이 들어올 때 (인터페이스 구현)
     @Override
     public void onTickerUpdate(String symbol, String priceStr, String flucStr, String accPriceStr) {
         String cleanPrice = priceStr.replace(",", "").replace(" KRW", "").trim();
         if (cleanPrice.isEmpty() || cleanPrice.equals("연결중...")) return;
 
-BigDecimal priceBD = new BigDecimal(cleanPrice);
-        
-        //화면 갱신과 상관없이, 일단 들어오는 모든 코인 가격을 갱신
+        BigDecimal priceBD = new BigDecimal(cleanPrice);
         latestPrices.put(symbol, priceBD);
 
-        // 지금 보고 있는 코인이 아니면 화면 업데이트 로직은 무시
         if (!this.selectedCoinCode.equals(symbol)) return;
 
         this.currentSelectedPrice = priceBD;
@@ -295,7 +295,6 @@ BigDecimal priceBD = new BigDecimal(cleanPrice);
         SwingUtilities.invokeLater(() -> {
             lblSelectedCoinInfo.setText(krName + " - 현재가 " + String.format("%,.0f", currentSelectedPrice) + " KRW");
             
-            // 지정가 모드이고 입력창이 비어있을 때만
             if (isLimitMode && priceField.getText().isEmpty()) {
                 priceField.setText(cleanPrice);
                 updateOrderSummary();
@@ -307,10 +306,10 @@ BigDecimal priceBD = new BigDecimal(cleanPrice);
         });
     }
 
-    // 화면 및 계산 로직
     private void updateInfoLabel() {
         String assetCode = (sideIdx == 0) ? "KRW" : selectedCoinCode; 
-        BigDecimal balance = mockBalance.getOrDefault(assetCode, BigDecimal.ZERO);
+        // 💡 가짜 데이터 대신 진짜 DB 데이터(realBalance)를 화면에 렌더링
+        BigDecimal balance = realBalance.getOrDefault(assetCode, BigDecimal.ZERO);
         String format = assetCode.equals("KRW") ? "%,.0f" : "%.8f";
         valAvailable.setText(String.format(format + " %s", balance, assetCode));
     }
@@ -348,11 +347,9 @@ BigDecimal priceBD = new BigDecimal(cleanPrice);
             BigDecimal inputVal = new BigDecimal(amtStr);
 
             if (sideIdx == 0) { 
-                // 매수
-                BigDecimal expectedQty = inputVal.divide(currentSelectedPrice, 8, BigDecimal.ROUND_DOWN);
+                BigDecimal expectedQty = inputVal.divide(currentSelectedPrice, 8, RoundingMode.DOWN);
                 valExpected.setText("예상 수량: " + expectedQty.toPlainString() + " " + selectedCoinCode);
             } else { 
-                // 매도
                 BigDecimal expectedKRW = inputVal.multiply(currentSelectedPrice);
                 valExpected.setText("예상 수령: " + String.format("%,.0f", expectedKRW) + " KRW");
             }
@@ -372,10 +369,10 @@ BigDecimal priceBD = new BigDecimal(cleanPrice);
             btnAction.setBackground(side == 0 ? COLOR_BID : COLOR_ASK);
             
             if (lblMarketUnit != null) {
-                if (side == 0) { // 매수
+                if (side == 0) {
                     lblMarketUnit.setText("주문총액 (KRW)");
                     valExpected.setText("예상 수량: -");
-                } else { // 매도
+                } else {
                     lblMarketUnit.setText("주문수량 (" + selectedCoinCode + ")");
                     valExpected.setText("예상 수령액: -");
                 }
@@ -385,8 +382,6 @@ BigDecimal priceBD = new BigDecimal(cleanPrice);
         updateInfoLabel();
     }
 
-    // 주문(매수/매도/정정/취소) 실행 로직
-
     private void handleOrderAction() {
         if (isLimitMode) {
             handleLimitOrder();
@@ -395,7 +390,6 @@ BigDecimal priceBD = new BigDecimal(cleanPrice);
         }
     }
 
-    //try-catch 중괄호 어긋남 및 로직 버그 해결
     private void handleLimitOrder() {
         try {
             String pStr = priceField.getText().replace(",", "").trim();
@@ -410,7 +404,9 @@ BigDecimal priceBD = new BigDecimal(cleanPrice);
             BigDecimal total = price.multiply(qty);
 
             String currency = (sideIdx == 0) ? "KRW" : selectedCoinCode;
-            BigDecimal balance = mockBalance.getOrDefault(currency, BigDecimal.ZERO);
+            
+            // 💡 진짜 잔고로 결제 여부 검사
+            BigDecimal balance = realBalance.getOrDefault(currency, BigDecimal.ZERO);
             BigDecimal requiredAmount = (sideIdx == 0) ? total : qty;
 
             if (balance.compareTo(requiredAmount) < 0) {
@@ -419,26 +415,23 @@ BigDecimal priceBD = new BigDecimal(cleanPrice);
 
             OrderDTO order = new OrderDTO();
             order.setOrderId(System.currentTimeMillis());
+            order.setUserId(this.userId); 
+            order.setSessionId(this.sessionId); 
+            order.setMarket("KRW-" + selectedCoinCode); 
             order.setSide(sideIdx == 0 ? "BID" : "ASK");
             order.setOriginalPrice(price);
             order.setOriginalVolume(qty);
             order.setRemainingVolume(qty);
             order.setStatus("WAIT");
 
-            boolean isSuccess = orderDAO.insertOrder(order, "user_01"); 
+            boolean isSuccess = orderDAO.insertOrder(order); 
 
             if (!isSuccess) {
                 throw new RuntimeException("데이터베이스 저장에 실패했습니다.");
             }
 
-            mockBalance.put(currency, balance.subtract(requiredAmount));
-            BigDecimal currentLocked = mockLocked.getOrDefault(currency, BigDecimal.ZERO);
-            mockLocked.put(currency, currentLocked.add(requiredAmount));
-
-            openOrders.add(order);
-            orderCoinMap.put(order.getOrderId(), selectedCoinCode);//주문번호, 코인 짝지어 기억
-            refreshEditList();
-            updateInfoLabel();
+            // 💡 자체 연산 대신 DB에서 다시 깔끔하게 불러옴
+            refreshDBData();
             
             JOptionPane.showMessageDialog(this, "지정가 주문 접수 완료");
 
@@ -457,81 +450,72 @@ BigDecimal priceBD = new BigDecimal(cleanPrice);
             if (text.isEmpty()) throw new RuntimeException("주문 내용을 입력해주세요.");
             BigDecimal inputVal = new BigDecimal(text);
 
-            //시장가 매수 (BID)
             if (sideIdx == 0) { 
-                BigDecimal krwBal = mockBalance.getOrDefault("KRW", BigDecimal.ZERO);
+                // 시장가 매수
+                BigDecimal krwBal = realBalance.getOrDefault("KRW", BigDecimal.ZERO);
                 if (krwBal.compareTo(inputVal) < 0) throw new RuntimeException("KRW 잔고가 부족합니다.");
                 
                 BigDecimal buyQty = OrderCalc.calculateMarketBuyQuantity(inputVal, currentSelectedPrice);
                 
                 OrderDTO marketOrder = new OrderDTO();
                 marketOrder.setOrderId(System.currentTimeMillis());
+                marketOrder.setUserId(this.userId); 
+                marketOrder.setSessionId(this.sessionId); 
+                marketOrder.setMarket("KRW-" + selectedCoinCode); 
                 marketOrder.setSide("BID");
                 marketOrder.setStatus("DONE");
 
                 boolean isSuccess = orderDAO.executeMarketOrder(
-                    marketOrder, "this.userId", currentSelectedPrice, buyQty, inputVal
+                    marketOrder, this.userId, currentSelectedPrice, buyQty, inputVal
                 );
 
                 if (isSuccess) {
-                    mockBalance.put("KRW", krwBal.subtract(inputVal));
-                    BigDecimal coinBal = mockBalance.getOrDefault(selectedCoinCode, BigDecimal.ZERO);
-                    mockBalance.put(selectedCoinCode, coinBal.add(buyQty));
-                    
-                    //토스트 알림 띄우기
+                    refreshDBData(); // 💡 DB 다시 조회
                     String msg = String.format("[체결] %s 시장가 매수 완료 (%.8f개)", selectedCoinCode, buyQty);
-                    
-                    // 부모 프레임(MainFrame)을 찾아서 알림 전달
                     JFrame parentFrame = (JFrame) SwingUtilities.getWindowAncestor(this);
                     com.team.coin_simulator.Alerts.NotificationUtil.showToast(parentFrame, msg);
-                    
                 } else {
                     throw new RuntimeException("DB 저장 실패");
                 }
             } 
-            //시장가 매도 (ASK)
             else { 
-                BigDecimal coinBal = mockBalance.getOrDefault(selectedCoinCode, BigDecimal.ZERO);
+                // 시장가 매도
+                BigDecimal coinBal = realBalance.getOrDefault(selectedCoinCode, BigDecimal.ZERO);
                 if (coinBal.compareTo(inputVal) < 0) throw new RuntimeException(selectedCoinCode + " 잔고가 부족합니다.");
 
                 BigDecimal sellTotalKRW = inputVal.multiply(currentSelectedPrice);
 
                 OrderDTO marketOrder = new OrderDTO();
                 marketOrder.setOrderId(System.currentTimeMillis());
+                marketOrder.setUserId(this.userId);
+                marketOrder.setSessionId(this.sessionId); 
+                marketOrder.setMarket("KRW-" + selectedCoinCode); 
                 marketOrder.setSide("ASK");
                 marketOrder.setStatus("DONE");
 
                 boolean isSuccess = orderDAO.executeMarketOrder(
-                    marketOrder, "this.userId", currentSelectedPrice, inputVal, sellTotalKRW
+                    marketOrder, this.userId, currentSelectedPrice, inputVal, sellTotalKRW
                 );
 
                 if (isSuccess) {
-                    mockBalance.put(selectedCoinCode, coinBal.subtract(inputVal));
-                    BigDecimal krwBal = mockBalance.getOrDefault("KRW", BigDecimal.ZERO);
-                    mockBalance.put("KRW", krwBal.add(sellTotalKRW));
-
-                    //토스트 알림 띄우기
+                    refreshDBData(); // 💡 DB 다시 조회
                     String msg = String.format("[체결] %s 시장가 매도 완료 (%,.0f KRW)", selectedCoinCode, sellTotalKRW);
-                    // 부모 프레임(MainFrame)을 찾아서 알림 전달
                     JFrame parentFrame = (JFrame) SwingUtilities.getWindowAncestor(this);
                     com.team.coin_simulator.Alerts.NotificationUtil.showToast(parentFrame, msg);
-
                 } else {
                     throw new RuntimeException("DB 저장 실패");
                 }
             }
 
-            updateInfoLabel();
             marketAmountField.setText(""); 
 
         } catch (Exception e) {
-            // 에러 메시지는 중요한 경고이므로 기존 팝업 유지
             JOptionPane.showMessageDialog(this, "주문 실패: " + e.getMessage(), "에러", JOptionPane.ERROR_MESSAGE);
         }
     }
 
     private void cancelOrder(OrderDTO order) {
-    	String orderCoin = orderCoinMap.getOrDefault(order.getOrderId(), selectedCoinCode);
+        String orderCoin = orderCoinMap.getOrDefault(order.getOrderId(), selectedCoinCode);
         String curr = order.getSide().equals("BID") ? "KRW" : orderCoin;
         
         BigDecimal lockedAmt = order.getSide().equals("BID") ? order.getOriginalPrice().multiply(order.getOriginalVolume()) : order.getOriginalVolume();
@@ -539,15 +523,7 @@ BigDecimal priceBD = new BigDecimal(cleanPrice);
         boolean isDBSuccess = orderDAO.cancelOrder(order.getOrderId(), this.userId, order.getSide(), lockedAmt);
         
         if (isDBSuccess) {
-            mockLocked.put(curr, mockLocked.get(curr).subtract(lockedAmt));
-            mockBalance.put(curr, mockBalance.get(curr).add(lockedAmt));
-            openOrders.remove(order);
-            
-            //맵에서도 삭제
-            orderCoinMap.remove(order.getOrderId());
-            
-            refreshEditList();
-            updateInfoLabel();
+            refreshDBData(); // 💡 취소 후 DB 동기화
             JOptionPane.showMessageDialog(this, "주문이 취소되었습니다.");
         } else {
             JOptionPane.showMessageDialog(this, "DB 취소 처리에 실패했습니다.", "오류", JOptionPane.ERROR_MESSAGE);
@@ -555,7 +531,7 @@ BigDecimal priceBD = new BigDecimal(cleanPrice);
     }
 
     private void showModifyDialog(OrderDTO order) {
-String orderCoin = orderCoinMap.getOrDefault(order.getOrderId(), selectedCoinCode);
+        String orderCoin = orderCoinMap.getOrDefault(order.getOrderId(), selectedCoinCode);
         
         JPanel panel = new JPanel(new GridLayout(2, 2, 5, 5));
         JTextField txtPrice = new JTextField(order.getOriginalPrice().toString());
@@ -573,12 +549,10 @@ String orderCoin = orderCoinMap.getOrDefault(order.getOrderId(), selectedCoinCod
                 BigDecimal oldLockedAmt = order.getSide().equals("BID") ? 
                         order.getOriginalPrice().multiply(order.getOriginalVolume()) : order.getOriginalVolume();
 
-                BigDecimal currentLocked = mockLocked.getOrDefault(curr, BigDecimal.ZERO);
-                BigDecimal currentBalance = mockBalance.getOrDefault(curr, BigDecimal.ZERO);
+                BigDecimal currentLocked = realLocked.getOrDefault(curr, BigDecimal.ZERO);
+                BigDecimal currentBalance = realBalance.getOrDefault(curr, BigDecimal.ZERO);
 
                 BigDecimal tempBalance = currentBalance.add(oldLockedAmt);
-                BigDecimal tempLocked = currentLocked.subtract(oldLockedAmt);
-
                 BigDecimal newRequiredAmt = order.getSide().equals("BID") ? newPrice.multiply(newQty) : newQty;
 
                 if (tempBalance.compareTo(newRequiredAmt) < 0) {
@@ -586,14 +560,7 @@ String orderCoin = orderCoinMap.getOrDefault(order.getOrderId(), selectedCoinCod
                 }
 
                 if (orderDAO.modifyOrder(order.getOrderId(), this.userId, order.getSide(), oldLockedAmt, newRequiredAmt, newPrice, newQty)) {
-                    mockBalance.put(curr, tempBalance.subtract(newRequiredAmt));
-                    mockLocked.put(curr, tempLocked.add(newRequiredAmt));
-                    order.setOriginalPrice(newPrice);
-                    order.setOriginalVolume(newQty);
-                    order.setRemainingVolume(newQty);
-
-                    refreshEditList();
-                    updateInfoLabel();
+                    refreshDBData(); // 💡 정정 성공 후 DB 동기화
                     JOptionPane.showMessageDialog(this, "주문이 정정되었습니다. (DB 반영 완료)");
                 } else {
                     JOptionPane.showMessageDialog(this, "DB 정정 처리에 실패했습니다.", "오류", JOptionPane.ERROR_MESSAGE);
@@ -609,15 +576,13 @@ String orderCoin = orderCoinMap.getOrDefault(order.getOrderId(), selectedCoinCod
     // ==========================================================
     
     private void refreshEditList() {
-        if (isUpdatingComboBox) return; // 무한루프 방지
+        if (isUpdatingComboBox) return; 
 
-        // 1. 현재 대기 중인 주문들의 코인 목록만 뽑아내기
         Set<String> activeCoins = new HashSet<>();
         for (OrderDTO o : openOrders) {
             activeCoins.add(orderCoinMap.getOrDefault(o.getOrderId(), "BTC"));
         }
 
-        // 2. 콤보박스 아이템 동적 갱신 (전체 + 현재 주문 있는 코인들)
         String currentSelection = (String) filterComboBox.getSelectedItem();
         isUpdatingComboBox = true;
         filterComboBox.removeAllItems();
@@ -626,7 +591,6 @@ String orderCoin = orderCoinMap.getOrDefault(order.getOrderId(), selectedCoinCod
             filterComboBox.addItem(coin);
         }
         
-        // 이전에 보던 필터 유지 처리
         if (currentSelection != null && (activeCoins.contains(currentSelection) || currentSelection.equals("전체"))) {
             filterComboBox.setSelectedItem(currentSelection);
         } else {
@@ -635,12 +599,10 @@ String orderCoin = orderCoinMap.getOrDefault(order.getOrderId(), selectedCoinCod
         }
         isUpdatingComboBox = false;
 
-        // 3. 화면에 조건에 맞는 리스트만 그리기
         editListPanel.removeAll();
         for (OrderDTO order : openOrders) {
             String orderCoin = orderCoinMap.getOrDefault(order.getOrderId(), "BTC");
             
-            // "전체"를 골랐거나, 해당 코인을 골랐을 때만 화면에 추가!
             if (currentSelection.equals("전체") || currentSelection.equals(orderCoin)) {
                 editListPanel.add(createOrderEditItem(order, orderCoin));
                 editListPanel.add(Box.createVerticalStrut(10));
@@ -659,7 +621,7 @@ String orderCoin = orderCoinMap.getOrDefault(order.getOrderId(), selectedCoinCod
         item.setMaximumSize(new Dimension(360, 140)); 
         
         String sideTxt = order.getSide().equals("BID") ? "매수" : "매도";
-        JLabel typeLbl = new JLabel(sideTxt + " (" + coinCode + ")"); // 코인 이름도 라벨에 추가로 보여줌
+        JLabel typeLbl = new JLabel(sideTxt + " (" + coinCode + ")"); 
         typeLbl.setForeground(order.getSide().equals("BID") ? COLOR_BID : COLOR_ASK);
         typeLbl.setFont(new Font("맑은 고딕", Font.BOLD, 14));
 
@@ -668,7 +630,7 @@ String orderCoin = orderCoinMap.getOrDefault(order.getOrderId(), selectedCoinCod
         center.add(new JLabel("가격"));
         center.add(new JLabel(String.format("%,.0f KRW", order.getOriginalPrice()), SwingConstants.RIGHT));
         center.add(new JLabel("수량"));
-        center.add(new JLabel(order.getOriginalVolume() + " " + coinCode, SwingConstants.RIGHT)); // 해당 코인 단위 표시
+        center.add(new JLabel(order.getOriginalVolume() + " " + coinCode, SwingConstants.RIGHT)); 
         
         JPanel btnPanel = new JPanel(new GridLayout(1, 2, 5, 0)); 
         btnPanel.setBackground(Color.WHITE);

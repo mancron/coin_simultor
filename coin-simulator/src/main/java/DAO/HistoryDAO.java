@@ -9,7 +9,6 @@ import java.util.ArrayList;
 import java.util.List;
 
 import com.team.coin_simulator.DBConnection;
-
 import DTO.ExecutionDTO;
 
 /**
@@ -18,22 +17,15 @@ import DTO.ExecutionDTO;
  */
 public class HistoryDAO {
     
-    /**
-     * 사용자의 모든 거래 내역 조회 (기간 필터)
-     * 
-     * @param userId 사용자 ID
-     * @param startDate 시작일
-     * @param endDate 종료일
-     * @return 거래 내역 리스트
-     */
-    public List<ExecutionDTO> getExecutionHistory(String userId, Date startDate, Date endDate) {
+    // 💡 1. 전체 조회 (세션 ID 추가)
+    public List<ExecutionDTO> getExecutionHistory(String userId, long sessionId, Date startDate, Date endDate) {
         List<ExecutionDTO> list = new ArrayList<>();
         
         String sql = 
             "SELECT e.* " +
             "FROM executions e " +
             "INNER JOIN orders o ON e.order_id = o.order_id " +
-            "WHERE o.user_id = ? " +
+            "WHERE o.user_id = ? AND o.session_id = ? " + // 💡 조건 추가
             "  AND DATE(e.executed_at) BETWEEN ? AND ? " +
             "ORDER BY e.executed_at DESC";
         
@@ -41,8 +33,9 @@ public class HistoryDAO {
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             
             pstmt.setString(1, userId);
-            pstmt.setDate(2, startDate);
-            pstmt.setDate(3, endDate);
+            pstmt.setLong(2, sessionId); // 💡 파라미터 매핑
+            pstmt.setDate(3, startDate);
+            pstmt.setDate(4, endDate);
             
             try (ResultSet rs = pstmt.executeQuery()) {
                 while (rs.next()) {
@@ -57,17 +50,9 @@ public class HistoryDAO {
         return list;
     }
     
-    /**
-     * 거래 종류별 필터링 조회
-     * 
-     * @param userId 사용자 ID
-     * @param startDate 시작일
-     * @param endDate 종료일
-     * @param side 거래 종류 ("BID", "ASK", null=전체)
-     * @return 거래 내역 리스트
-     */
+    // 💡 2. 거래 종류별 필터 (세션 ID 추가)
     public List<ExecutionDTO> getExecutionHistoryBySide(
-            String userId, Date startDate, Date endDate, String side) {
+            String userId, long sessionId, Date startDate, Date endDate, String side) {
         
         List<ExecutionDTO> list = new ArrayList<>();
         
@@ -75,7 +60,7 @@ public class HistoryDAO {
             "SELECT e.* " +
             "FROM executions e " +
             "INNER JOIN orders o ON e.order_id = o.order_id " +
-            "WHERE o.user_id = ? " +
+            "WHERE o.user_id = ? AND o.session_id = ? " + // 💡 조건 추가
             "  AND DATE(e.executed_at) BETWEEN ? AND ? ");
         
         if (side != null && !side.isEmpty()) {
@@ -89,6 +74,7 @@ public class HistoryDAO {
             
             int idx = 1;
             pstmt.setString(idx++, userId);
+            pstmt.setLong(idx++, sessionId); // 💡 파라미터 매핑
             pstmt.setDate(idx++, startDate);
             pstmt.setDate(idx++, endDate);
             
@@ -109,18 +95,9 @@ public class HistoryDAO {
         return list;
     }
     
-    /**
-     * 코인별 + 거래종류별 필터링 조회
-     * 
-     * @param userId 사용자 ID
-     * @param startDate 시작일
-     * @param endDate 종료일
-     * @param market 마켓 코드 (예: "KRW-BTC", null=전체)
-     * @param side 거래 종류 ("BID", "ASK", null=전체)
-     * @return 거래 내역 리스트
-     */
+    // 💡 3. 코인별 + 종류별 필터 (세션 ID 추가)
     public List<ExecutionDTO> getExecutionHistoryFiltered(
-            String userId, Date startDate, Date endDate, String market, String side) {
+            String userId, long sessionId, Date startDate, Date endDate, String market, String side) {
         
         List<ExecutionDTO> list = new ArrayList<>();
         
@@ -128,7 +105,7 @@ public class HistoryDAO {
             "SELECT e.* " +
             "FROM executions e " +
             "INNER JOIN orders o ON e.order_id = o.order_id " +
-            "WHERE o.user_id = ? " +
+            "WHERE o.user_id = ? AND o.session_id = ? " + // 💡 조건 추가
             "  AND DATE(e.executed_at) BETWEEN ? AND ? ");
         
         if (market != null && !market.isEmpty()) {
@@ -146,6 +123,7 @@ public class HistoryDAO {
             
             int idx = 1;
             pstmt.setString(idx++, userId);
+            pstmt.setLong(idx++, sessionId); // 💡 파라미터 매핑
             pstmt.setDate(idx++, startDate);
             pstmt.setDate(idx++, endDate);
             
@@ -170,12 +148,8 @@ public class HistoryDAO {
         return list;
     }
     
-    /**
-     * ResultSet을 ExecutionDTO로 매핑
-     */
     private ExecutionDTO mapResultSetToDTO(ResultSet rs) throws SQLException {
         ExecutionDTO dto = new ExecutionDTO();
-        
         dto.setExecutionId(rs.getLong("execution_id"));
         dto.setOrderId(rs.getLong("order_id"));
         dto.setMarket(rs.getString("market"));
@@ -187,7 +161,6 @@ public class HistoryDAO {
         dto.setRealizedPnl(rs.getBigDecimal("realized_pnl"));
         dto.setRoi(rs.getBigDecimal("roi"));
         dto.setExecutedAt(rs.getTimestamp("executed_at"));
-        
         return dto;
     }
 }
