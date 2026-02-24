@@ -75,9 +75,24 @@ public class OrderDAO {
         Connection conn = null;
         try {
             conn = DBConnection.getConnection();
-            conn.setAutoCommit(false); 
+            conn.setAutoCommit(false);
 
-            //취소할 주문의 session_id와 market(코인 종류) 조회
+            // 1. 주문 상태 변경 (상태가 'WAIT'인 경우에만 'CANCEL'로 변경 가능)
+            // 💡 여기서 'WAIT' 조건을 걸어야 중복 취소를 원천 차단합니다.
+            String updateOrderSql = "UPDATE orders SET status = 'CANCEL' WHERE order_id = ? AND user_id = ? AND status = 'WAIT'";
+            try (PreparedStatement pstmt = conn.prepareStatement(updateOrderSql)) {
+                pstmt.setLong(1, orderId);
+                pstmt.setString(2, userId);
+                
+                int affectedRows = pstmt.executeUpdate();
+                if (affectedRows == 0) {
+                    // 이미 취소되었거나, 체결되었거나, 주문이 없는 경우
+                    throw new SQLException("이미 처리된 주문이거나 취소할 수 없는 상태입니다.");
+                }
+            }
+
+            // 2. 자산 복구
+            // 💡 주문 정보에서 읽어온 진짜 session_id와 market을 사용하기 위해 먼저 조회
             long sessionId = 0;
             String market = "";
             String fetchSql = "SELECT session_id, market FROM orders WHERE order_id = ?";
@@ -87,54 +102,38 @@ public class OrderDAO {
                     if (rs.next()) {
                         sessionId = rs.getLong("session_id");
                         market = rs.getString("market");
-                    } else {
-                        throw new SQLException("주문 정보를 찾을 수 없습니다.");
                     }
                 }
             }
 
-            //주문 상태 변경
-            String updateOrderSql = "UPDATE orders SET status = 'CANCEL' WHERE order_id = ? AND user_id = ?";
-            try (PreparedStatement pstmt = conn.prepareStatement(updateOrderSql)) {
-                pstmt.setLong(1, orderId);
-                pstmt.setString(2, userId);
-                
-                int affectedRows = pstmt.executeUpdate();
-                // [핵심] 여기서 0이 나오면 "그런 주문 번호 없는데?" 라는 뜻
-                if (affectedRows == 0) {
-                    throw new SQLException("DB에서 해당 주문번호(" + orderId + ")를 찾을 수 없거나 이미 취소되었습니다.");
-                }
-            }
-
-            //자산 복구 (동적 코인 할당 및 세션 격리 적용)
             String currency = side.equals("BID") ? "KRW" : market.replace("KRW-", "");
-            String refundAssetSql = "UPDATE assets SET balance = balance + ?, locked = locked - ? WHERE user_id = ? AND session_id = ? AND currency = ?";
+            // 💡 locked가 부족하면 환불 안 되게 한 번 더 방어
+            String refundAssetSql = "UPDATE assets SET balance = balance + ?, locked = locked - ? " +
+                                    "WHERE user_id = ? AND session_id = ? AND currency = ? AND locked >= ?";
+
             try (PreparedStatement pstmt = conn.prepareStatement(refundAssetSql)) {
                 pstmt.setBigDecimal(1, amount);
-                pstmt.setBigDecimal(2, amount); 
+                pstmt.setBigDecimal(2, amount);
                 pstmt.setString(3, userId);
                 pstmt.setLong(4, sessionId);
                 pstmt.setString(5, currency);
-                
-                // 💡 [핵심 수정] 0건 업데이트 시 조용히 넘어가지 못하게 철퇴!
-                int updatedRows = pstmt.executeUpdate(); 
-                if (updatedRows == 0) {
-                    System.err.println(">> [에러] 환불할 계좌를 찾지 못했습니다! (user:" + userId + ", session:" + sessionId + ", currency:" + currency + ")");
-                    throw new SQLException("자산을 돌려줄 계좌(세션)를 DB에서 찾지 못했습니다.");
+                pstmt.setBigDecimal(6, amount); // 6번째 파라미터: locked >= amount
+
+                if (pstmt.executeUpdate() == 0) {
+                    throw new SQLException("자산 복구에 실패했습니다. (금고에 돈이 부족함)");
                 }
             }
 
-            conn.commit(); 
-            System.out.println(">> [DB] 주문 취소 및 자산 복구 완벽 처리 성공! (session: " + sessionId + ")");
+            conn.commit();
+            System.out.println(">> [DB] 취소 성공: " + orderId);
             return true;
-            
+
         } catch (SQLException e) {
-            if (conn != null) try { conn.rollback(); } catch(SQLException ex) {}
-            System.err.println("취소 실패: " + e.getMessage());
-            e.printStackTrace();
+            if (conn != null) try { conn.rollback(); } catch (SQLException ex) {}
+            System.err.println(">> [취소 중단] " + e.getMessage());
             return false;
         } finally {
-            if (conn != null) try { conn.close(); } catch(SQLException ex) {}
+            if (conn != null) try { conn.close(); } catch (SQLException ex) {}
         }
     }
 
