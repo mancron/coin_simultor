@@ -176,4 +176,71 @@ public class HistoryDAO {
             "ORDER BY e.executed_at DESC";
         try (Connection conn = DBConnection.getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
-            pstmt.setString(1, userId); pstmt.
+            pstmt.setString(1, userId); 
+            pstmt.setDate(2, startDate); 
+            pstmt.setDate(3, endDate);
+            try (ResultSet rs = pstmt.executeQuery()) { while (rs.next()) list.add(mapResultSetToDTO(rs)); }
+        } catch (SQLException e) { e.printStackTrace(); }
+        return list;
+    }
+
+    /** @deprecated sessionId를 명시하는 오버로드 사용 권장 */
+    @Deprecated
+    public List<ExecutionDTO> getExecutionHistoryBySide(
+            String userId, Date startDate, Date endDate, String side) {
+        List<ExecutionDTO> list = new ArrayList<>();
+        StringBuilder sql = new StringBuilder(
+            "SELECT e.* FROM executions e INNER JOIN orders o ON e.order_id = o.order_id " +
+            "WHERE o.user_id = ? AND DATE(e.executed_at) BETWEEN ? AND ? ");
+        if (side != null && !side.isEmpty()) sql.append("AND e.side = ? ");
+        sql.append("ORDER BY e.executed_at DESC");
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql.toString())) {
+            int idx = 1;
+            pstmt.setString(idx++, userId); pstmt.setDate(idx++, startDate); pstmt.setDate(idx++, endDate);
+            if (side != null && !side.isEmpty()) pstmt.setString(idx++, side);
+            try (ResultSet rs = pstmt.executeQuery()) { while (rs.next()) list.add(mapResultSetToDTO(rs)); }
+        } catch (SQLException e) { e.printStackTrace(); }
+        return list;
+    }
+
+    /** @deprecated sessionId를 명시하는 오버로드 사용 권장 */
+    @Deprecated
+    public List<ExecutionDTO> getExecutionHistoryFiltered(
+            String userId, Date startDate, Date endDate, String market, String side) {
+        List<ExecutionDTO> list = new ArrayList<>();
+        StringBuilder sql = new StringBuilder(
+            "SELECT e.* FROM executions e INNER JOIN orders o ON e.order_id = o.order_id " +
+            "WHERE o.user_id = ? AND DATE(e.executed_at) BETWEEN ? AND ? ");
+        if (market != null && !market.isEmpty()) sql.append("AND e.market = ? ");
+        if (side   != null && !side.isEmpty())   sql.append("AND e.side = ? ");
+        sql.append("ORDER BY e.executed_at DESC");
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql.toString())) {
+            int idx = 1;
+            pstmt.setString(idx++, userId); pstmt.setDate(idx++, startDate); pstmt.setDate(idx++, endDate);
+            if (market != null && !market.isEmpty()) pstmt.setString(idx++, market);
+            if (side   != null && !side.isEmpty())   pstmt.setString(idx++, side);
+            try (ResultSet rs = pstmt.executeQuery()) { while (rs.next()) list.add(mapResultSetToDTO(rs)); }
+        } catch (SQLException e) { e.printStackTrace(); }
+        return list;
+    }
+
+    // ── 공통 매핑 ───────────────────────────────────────────────
+
+    private ExecutionDTO mapResultSetToDTO(ResultSet rs) throws SQLException {
+        ExecutionDTO dto = new ExecutionDTO();
+        dto.setExecutionId(rs.getLong("execution_id"));
+        dto.setOrderId(rs.getLong("order_id"));
+        dto.setMarket(rs.getString("market"));
+        dto.setSide(rs.getString("side"));
+        dto.setPrice(rs.getBigDecimal("price"));
+        dto.setVolume(rs.getBigDecimal("volume"));
+        dto.setFee(rs.getBigDecimal("fee"));
+        dto.setBuyAvgPrice(rs.getBigDecimal("buy_avg_price"));
+        dto.setRealizedPnl(rs.getBigDecimal("realized_pnl"));
+        dto.setRoi(rs.getBigDecimal("roi"));
+        dto.setExecutedAt(rs.getTimestamp("executed_at"));
+        return dto;
+    }
+}
