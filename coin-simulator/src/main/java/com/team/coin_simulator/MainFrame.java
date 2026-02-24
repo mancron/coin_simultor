@@ -76,7 +76,7 @@ public class MainFrame extends JFrame {
     private BacktestTimeControlPanel backtestControlPanel;
     private CandleChartBacktestAdapter chartBacktestAdapter;
 
-    private long currentSessionId = 0L;
+    private long currentSessionId = SessionManager.getInstance().getCurrentSessionId();
 
     // ════════════════════════════════════════════════
     //  생성자

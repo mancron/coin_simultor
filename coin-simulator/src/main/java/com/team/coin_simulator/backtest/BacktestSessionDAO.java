@@ -202,6 +202,7 @@ public class BacktestSessionDAO {
     //  ResultSet → SessionDTO 매핑
     // ──────────────────────────────────────────────
 
+    
     private SessionDTO map(ResultSet rs) throws SQLException {
         SessionDTO dto = new SessionDTO();
         dto.setSessionId(rs.getLong("session_id"));
@@ -214,5 +215,54 @@ public class BacktestSessionDAO {
         dto.setActive(rs.getBoolean("is_active"));
         dto.setCreatedAt(rs.getTimestamp("created_at"));
         return dto;
+    }
+    
+ // ──────────────────────────────────────────────
+    //  실시간(REALTIME) 세션 조회 및 생성
+    // ──────────────────────────────────────────────
+
+    /**
+     * 사용자의 실시간(REALTIME) 세션을 가져옵니다.
+     * 만약 데이터베이스에 없다면 자동으로 새로 하나 생성해서 반환합니다.
+     */
+    public SessionDTO getOrCreateRealtimeSession(String userId) {
+        // 1. 기존에 만들어둔 실시간 세션이 있는지 조회
+        String selectSql = "SELECT * FROM simulation_sessions " +
+                           "WHERE user_id = ? AND session_type = 'REALTIME' LIMIT 1";
+        
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(selectSql)) {
+            ps.setString(1, userId);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return map(rs); // 이미 있으면 그대로 반환
+                }
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+
+        // 2. 없다면 새로 생성 (초기 자본금은 예시로 100,000,000원 설정. 필요시 수정)
+        String insertSql = "INSERT INTO simulation_sessions " +
+                           "(user_id, session_name, session_type, initial_seed_money, is_active) " +
+                           "VALUES (?, '실시간 모의투자', 'REALTIME', 100000000, TRUE)";
+        
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(insertSql, Statement.RETURN_GENERATED_KEYS)) {
+            ps.setString(1, userId);
+            ps.executeUpdate();
+            
+            try (ResultSet keys = ps.getGeneratedKeys()) {
+                if (keys.next()) {
+                    long newSessionId = keys.getLong(1);
+                    SessionDTO dto = new SessionDTO(userId, "실시간 모의투자", type.SessionType.REALTIME, java.math.BigDecimal.valueOf(100000000));
+                    dto.setSessionId(newSessionId);
+                    return dto;
+                }
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return null;
     }
 }

@@ -129,7 +129,7 @@ public class BacktestTimeControlPanel extends JPanel
             btn.setFont(new Font("맑은 고딕", Font.BOLD, 11));
             btn.setFocusPainted(false);
             btn.setBackground(CLR_NORMAL);
-            btn.setPreferredSize(new Dimension(68, 30));
+            btn.setPreferredSize(new Dimension(80, 30));
             btn.addActionListener(e -> changeSpeed(spd));
             speedButtons[i] = btn;
             speedPanel.add(btn);
