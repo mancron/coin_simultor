@@ -27,8 +27,12 @@ import javax.swing.border.LineBorder;
 import javax.swing.border.TitledBorder;
 
 import com.team.coin_simulator.MainFrame;
+// 세션 관리를 위한 import 추가
+import com.team.coin_simulator.backtest.BacktestSessionDAO;
+import com.team.coin_simulator.backtest.SessionManager;
 
 import DAO.UserDAO;
+import DTO.SessionDTO;
 import DTO.UserDTO;
 
 public class LoginFrame extends JFrame {
@@ -94,6 +98,17 @@ public class LoginFrame extends JFrame {
             UserDTO user = UserDAO.loginCheck(userId, password);
             if (user != null) {
                 JOptionPane.showMessageDialog(this, user.getNickname() + "님, 환영합니다!");
+                
+                // [핵심 변경] MainFrame을 띄우기 전에 실시간 세션을 조회 및 세팅합니다.
+                try {
+                    BacktestSessionDAO sessionDAO = new BacktestSessionDAO();
+                    SessionDTO realtimeSession = sessionDAO.getOrCreateRealtimeSession(user.getUserId());
+                    SessionManager.getInstance().setCurrentSession(realtimeSession);
+                } catch (Exception ex) {
+                    System.err.println("[LoginFrame] 세션 초기화 중 오류 발생: " + ex.getMessage());
+                    ex.printStackTrace();
+                }
+
                 new MainFrame(user.getUserId());   // 🔥 메인화면 실행
                 this.dispose();    // 로그인창 닫기
             }
@@ -248,4 +263,3 @@ public class LoginFrame extends JFrame {
         SwingUtilities.invokeLater(LoginFrame::new);
     }
 }
-
