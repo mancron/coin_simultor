@@ -36,7 +36,7 @@ public class OrderBookPanel extends JPanel {
         // 3. 자체 웹소켓 연결 시작
         connectUpbit();
     }
-
+ 
     private void initComponents() {
         String[] columns = {"Price (Change %)", "Quantity (" + coinSymbol + ")"};
 
