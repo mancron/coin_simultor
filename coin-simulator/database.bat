@@ -8,6 +8,7 @@ cd /d "%~dp0"
 echo 백그라운드 데이터베이스 동기화를 단독 실행합니다...
 
 REM 2. JAR 파일이 실제로 빌드되어 있는지 사전 체크
+
 if not exist "target\coin-simulator-1.0-SNAPSHOT.jar" (
     echo.
     echo [에러] target 폴더에 JAR 파일이 없습니다! 
