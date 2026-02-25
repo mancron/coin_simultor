@@ -13,6 +13,7 @@ public class UserDTO implements Serializable {
     private String userId;          // user_id (PK, 이메일 주소 등)
     private String password;        // password (반드시 암호화된 문자열이어야 함)
     private String nickname;        // nickname
+    private String profileImagePath;   // users.profile_image_path
     
     // 2. 인증 제공자 (기본값: EMAIL)
     private AuthProvider authProvider; 
@@ -43,6 +44,9 @@ public class UserDTO implements Serializable {
     // --- Getter & Setter ---
     // (이클립스 Alt + Shift + S -> R 로 생성)
 
+    public String getProfileImagePath() { return profileImagePath; }
+    public void setProfileImagePath(String profileImagePath) { this.profileImagePath = profileImagePath; }
+    
     public String getUserId() { return userId; }
     public void setUserId(String userId) { this.userId = userId; }
 

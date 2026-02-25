@@ -61,6 +61,10 @@ public class MainFrame extends JFrame {
     // 투자내역 화면 컴포넌트
     private Investment_details_MainPanel investmentPanel;
 
+ // --- MainFrame 필드에 추가 ---
+    private volatile boolean shuttingDown = false;
+    private Thread marketSyncThread;
+    
     // 상태 관리
     private String currentUserId = "test_user1";
     private boolean isTradingView = true;
@@ -75,8 +79,12 @@ public class MainFrame extends JFrame {
     // 백테스팅 UI / 어댑터
     private BacktestTimeControlPanel backtestControlPanel;
     private CandleChartBacktestAdapter chartBacktestAdapter;
+    
+    //profile 버튼 
+    private JButton btnProfile;
+    
+    private long currentSessionId = SessionManager.getInstance().getCurrentSessionId();
 
-    private long currentSessionId = 1L;
 
     // ════════════════════════════════════════════════
     //  생성자
@@ -85,6 +93,11 @@ public class MainFrame extends JFrame {
     public MainFrame(String userId) {
         super("가상화폐 모의투자 시스템");
         this.currentUserId = userId;
+        try {
+            UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
 
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setSize(1600, 900);
@@ -104,26 +117,38 @@ public class MainFrame extends JFrame {
     // ════════════════════════════════════════════════
 
     private void syncMarketDataBackground() {
-        new Thread(() -> {
+        marketSyncThread = new Thread(() -> {
             System.out.println("[MainFrame] 백그라운드에서 캔들 데이터 동기화를 시작합니다...");
             try {
-                DownloadDatabase.updateData(1);
+                // 로그아웃/종료 중이면 실행 안 함
+                if (shuttingDown || Thread.currentThread().isInterrupted()) return;
+
+                if (shuttingDown || Thread.currentThread().isInterrupted()) return;
+
                 System.out.println("[MainFrame] 데이터 동기화 완료!");
 
                 SwingUtilities.invokeLater(() -> {
+                    // ✅ 이미 로그아웃/종료면 UI 접근 금지
+                    if (shuttingDown) return;
+
                     if (investmentPanel != null) {
                         investmentPanel.setSessionId(currentSessionId);
                         investmentPanel.refreshAll();
                     }
                     System.out.println("[MainFrame] UI 데이터 갱신 완료");
                 });
-            } catch (Exception e) {
-                System.err.println("[MainFrame] 데이터 동기화 중 오류 발생: " + e.getMessage());
-                e.printStackTrace();
-            }
-        }).start();
-    }
 
+            } catch (Exception e) {
+                if (!shuttingDown) {
+                    System.err.println("[MainFrame] 데이터 동기화 중 오류 발생: " + e.getMessage());
+                    e.printStackTrace();
+                }
+            }
+        }, "MarketSyncThread");
+
+        marketSyncThread.setDaemon(true); // 앱 종료에 방해 안 되게
+        marketSyncThread.start();
+    }
     private void initComponents() {
         setLayout(new BorderLayout());
 
@@ -156,16 +181,17 @@ public class MainFrame extends JFrame {
         backtestControlPanel = new BacktestTimeControlPanel(this, currentUserId);
         panel.add(backtestControlPanel, BorderLayout.CENTER);
 
-        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 15, 10));
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 10));
         buttonPanel.setBackground(Color.WHITE);
 
+        // ✅ 투자내역 보기 버튼 (폭 줄임)
         btnToggleView = new JButton("투자내역 보기");
         btnToggleView.setFont(new Font("맑은 고딕", Font.BOLD, 13));
         btnToggleView.setForeground(Color.WHITE);
         btnToggleView.setBackground(new Color(52, 152, 219));
         btnToggleView.setFocusPainted(false);
         btnToggleView.setBorderPainted(false);
-        btnToggleView.setPreferredSize(new Dimension(150, 35));
+        btnToggleView.setPreferredSize(new Dimension(120, 35)); // 🔥 150 -> 120
         btnToggleView.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 
         btnToggleView.addMouseListener(new java.awt.event.MouseAdapter() {
@@ -176,10 +202,29 @@ public class MainFrame extends JFrame {
         btnToggleView.addActionListener(e -> toggleView());
         buttonPanel.add(btnToggleView);
 
+        // ✅ 프로필 버튼 (투자내역 보기 "오른쪽")
+        btnProfile = new JButton("내 프로필");
+        btnProfile.setFont(new Font("맑은 고딕", Font.BOLD, 13));
+        btnProfile.setForeground(Color.WHITE);
+        btnProfile.setBackground(new Color(155, 89, 182));
+        btnProfile.setFocusPainted(false);
+        btnProfile.setBorderPainted(false);
+        btnProfile.setPreferredSize(new Dimension(110, 35));
+        btnProfile.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+
+        btnProfile.addMouseListener(new java.awt.event.MouseAdapter() {
+            public void mouseEntered(java.awt.event.MouseEvent evt) { btnProfile.setBackground(new Color(142, 68, 173)); }
+            public void mouseExited(java.awt.event.MouseEvent evt)  { btnProfile.setBackground(new Color(155, 89, 182)); }
+        });
+
+        btnProfile.addActionListener(e -> openProfile());
+        buttonPanel.add(btnProfile);
+
         panel.add(buttonPanel, BorderLayout.EAST);
         return panel;
     }
 
+    
     /** 거래 화면 생성 */
     private JPanel createTradingPanel() {
         JPanel panel = new JPanel(new BorderLayout());
@@ -281,6 +326,22 @@ public class MainFrame extends JFrame {
     //  화면 전환 / 이벤트 핸들러
     // ════════════════════════════════════════════════
 
+    private void shutdownBackgroundTasks() {
+        shuttingDown = true;
+
+        // 1) WebSocket 종료
+        try { UpbitWebSocketDao.getInstance().close(); } catch (Exception ignored) {}
+
+        // 2) 호가창 연결 종료
+        try { if (orderBookPanel != null) orderBookPanel.closeConnection(); } catch (Exception ignored) {}
+
+        // 3) 주문패널(자동체결/타이머) 종료 훅 (아래 2번에서 OrderPanel에 메서드 추가할거임)
+        try { if (orderPanel != null) orderPanel.shutdown(); } catch (Exception ignored) {}
+
+        // 4) 마켓 동기화 스레드 interrupt
+        try { if (marketSyncThread != null) marketSyncThread.interrupt(); } catch (Exception ignored) {}
+    }
+    
     private void toggleView() {
         isTradingView = !isTradingView;
         if (isTradingView) {
@@ -324,26 +385,36 @@ public class MainFrame extends JFrame {
     // ════════════════════════════════════════════════
     //  WebSocket / 리소스
     // ════════════════════════════════════════════════
-
+    
+    //프로필 버튼 클릭시 열리게
+    private void openProfile() {
+        new com.team.coin_simulator.profile.ProfileDialog(this, currentUserId).setVisible(true);
+    }
+    
     private void initWebSocket() {
         UpbitWebSocketDao.getInstance().start();
     }
 
     @Override
     public void dispose() {
-        UpbitWebSocketDao.getInstance().close();
-        if (orderBookPanel != null) orderBookPanel.closeConnection();
-        DBConnection.close();
+        shutdownBackgroundTasks();
+
+        // ❌ 여기서 DBConnection.close() 절대 호출하지마 (로그아웃도 dispose 되니까)
         super.dispose();
     }
 
     //진입점
     public static void main(String[] args) {
+
+        // ✅ 프로그램 완전 종료시에만 DB 풀 닫기
+        Runtime.getRuntime().addShutdownHook(new Thread(DBConnection::close));
+
         try {
             UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
         } catch (Exception e) {
             e.printStackTrace();
         }
+
         SwingUtilities.invokeLater(() -> new MainFrame("test_user1"));
     }
 }
