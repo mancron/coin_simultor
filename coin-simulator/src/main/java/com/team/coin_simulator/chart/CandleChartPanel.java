@@ -33,8 +33,9 @@ import org.jfree.data.xy.OHLCDataset;
  *     - 매 분 00초에 라이브 캔들을 DB 데이터로 대체하고 새 분봉 시작
  *  4. 백테스팅 모드: targetTime 기준 과거 데이터만 표시
  *     ★ 타임프레임 변경 시에도 백테스팅 시점 유지
- *  5. DB에서 1분봉 기준으로 조회 후 타임프레임에 맞게 리샘플링
+ *  5. DB에서 타임프레임(unit)에 맞는 캔들을 직접 조회 (리샘플링 제거)
  *     - 지원 타임프레임: 1분 / 30분 / 1시간 / 4시간 / 1일 / 1달
+ *     - market_candle 테이블에 unit 컬럼별로 사전 집계된 데이터 필요
  * ────────────────────────────────────────────────────────
  */
 public class CandleChartPanel extends JPanel {
@@ -87,14 +88,6 @@ public class CandleChartPanel extends JPanel {
      * ex) 14:23:37 → 14:23:00
      */
     private LocalDateTime liveCandleMinuteStart = null;
-
-    /**
-     * 프로그램 실행 중 분봉이 넘어갈 때마다 완성된 liveCandle을 누적 저장합니다.
-     * DB가 갱신되지 않아도 이 리스트의 캔들이 차트에 렌더링되어 공백을 메웁니다.
-     * 최대 MAX_RUNTIME_CANDLES개까지 보관합니다.
-     */
-    private final List<CandleDTO> runtimeCandles = new ArrayList<>();
-    private static final int MAX_RUNTIME_CANDLES = 100;
 
     // ── 실시간 타이머 ────────────────────────────────────
     private Timer liveTimer;
@@ -249,27 +242,37 @@ public class CandleChartPanel extends JPanel {
     // ════════════════════════════════════════════════════
 
     /**
-     * 실시간/백테스팅 모드에 따라 1분봉을 조회하고 리샘플링합니다.
+     * 실시간/백테스팅 모드에 따라 해당 타임프레임(unit) 캔들을 직접 조회합니다.
+     * DB의 market_candle 테이블에 unit 컬럼별로 사전 집계된 데이터가 있어야 합니다.
      */
     private OHLCDataset createDataset(String market, int timeframe, LocalDateTime targetTime) {
-        List<CandleDTO> rawList;
-
-        // DB에서 가져올 1분봉 총 개수 계산 (예: 1시간봉이면 60 * 5000 = 300,000개)
-        int fetchLimit = timeframe * MAX_CANDLE_COUNT;
-
-        if (targetTime != null) {
-            rawList = candleDAO.getHistoricalCandles(market, 1, targetTime, fetchLimit);
-        } else {
-            rawList = candleDAO.getCandles(market, 1, fetchLimit);
+        List<CandleDTO> list;
+        
+        // unit=240이 DB에 없으므로 4시간봉은 1시간봉(unit=60)을 4개씩 묶어 리샘플링
+        if (timeframe == TF_4H) {
+            int fetchLimit = (TF_4H / TF_1H) * MAX_CANDLE_COUNT; // 1시간봉 4배 조회
+            if (targetTime != null) {
+                list = candleDAO.getHistoricalCandles(market, TF_1H, targetTime, fetchLimit);
+            } else {
+                list = candleDAO.getCandles(market, TF_1H, fetchLimit);
+            }
+            if (list.isEmpty()) return emptyDataset(market);
+            Collections.reverse(list);
+            return buildDataset(market, resample4H(list));
         }
 
-        if (rawList.isEmpty()) return emptyDataset(market);
+        if (targetTime != null) {
+            list = candleDAO.getHistoricalCandles(market, timeframe, targetTime, MAX_CANDLE_COUNT);
+        } else {
+            list = candleDAO.getCandles(market, timeframe, MAX_CANDLE_COUNT);
+        }
+
+        if (list.isEmpty()) return emptyDataset(market);
 
         // DB 조회는 DESC → ASC로 뒤집기
-        Collections.reverse(rawList);
+        Collections.reverse(list);
 
-        List<CandleDTO> resampled = resampleCandles(rawList, timeframe);
-        return buildDataset(market, resampled);
+        return buildDataset(market, list);
     }
 
     /**
@@ -282,76 +285,112 @@ public class CandleChartPanel extends JPanel {
      *     - 상위 타임프레임이면 마지막 리샘플 캔들에 liveCandle을 병합
      * ────────────────────────────────────────────────────────────────
      */
+    /**
+     * 실시간 모드 전용: DB의 확정된 캔들 데이터(해당 타임프레임) + 현재 진행 중인 liveCandle을 합쳐 데이터셋 생성.
+     *
+     * ── 동작 원리 ──────────────────────────────────────────────────
+     *  1) DB에서 해당 타임프레임(unit)의 캔들을 직접 조회 (리샘플링 불필요)
+     *  2) liveCandle(1분 단위 실시간 캔들)을 마지막에 덧붙임
+     *     - 1분봉: liveCandle을 그냥 추가 (같은 분봉이면 대체)
+     *     - 상위 타임프레임: liveCandle이 마지막 DB 캔들과 같은 블록이면 병합,
+     *       아니면 새 블록으로 추가
+     * ────────────────────────────────────────────────────────────────
+     */
     private OHLCDataset createDatasetWithLiveCandle(String market, int timeframe) {
-        // DB에서 가져올 1분봉 총 개수 계산
-        int fetchLimit = timeframe * MAX_CANDLE_COUNT;
-        
-        List<CandleDTO> rawList = candleDAO.getCandles(market, 1, fetchLimit);
-        Collections.reverse(rawList);
+    	// unit=240이 DB에 없으므로 4시간봉은 1시간봉(unit=60)으로 리샘플링
+        if (timeframe == TF_4H) {
+            int fetchLimit = (TF_4H / TF_1H) * MAX_CANDLE_COUNT;
+            List<CandleDTO> rawList = candleDAO.getCandles(market, TF_1H, fetchLimit);
+            Collections.reverse(rawList);
 
-        // ── 런타임 캔들 병합 ────────────────────────────────────────
-        // DB에 없는 실행 중 생성된 분봉들을 rawList 뒤에 이어붙임.
-        // DB의 마지막 캔들 이후 시간대의 런타임 캔들만 추가 (중복 방지)
-        if (!runtimeCandles.isEmpty()) {
-            LocalDateTime dbLastTime = rawList.isEmpty() ? null
-                    : rawList.get(rawList.size() - 1).getCandleDateTimeKst()
-                             .truncatedTo(java.time.temporal.ChronoUnit.MINUTES);
-
-            for (CandleDTO rc : runtimeCandles) {
-                LocalDateTime rcTime = rc.getCandleDateTimeKst()
-                                        .truncatedTo(java.time.temporal.ChronoUnit.MINUTES);
-                // DB에 이미 있는 시간대는 건너뜀
-                if (dbLastTime != null && !rcTime.isAfter(dbLastTime)) continue;
-                rawList.add(rc);
+            if (liveCandle == null) {
+                if (rawList.isEmpty()) return emptyDataset(market);
+                return buildDataset(market, resample4H(rawList));
             }
-        }
-        // ────────────────────────────────────────────────────────────
 
-        // liveCandle이 없으면 DB+런타임 데이터만으로 렌더링
+            // liveCandle(1분봉)을 1시간봉 rawList에 붙여서 함께 리샘플링
+            // 중복 방지: rawList 마지막과 liveCandle이 같은 시간이면 제거
+            if (!rawList.isEmpty() && liveCandleMinuteStart != null) {
+                CandleDTO last = rawList.get(rawList.size() - 1);
+                LocalDateTime lastHour = last.getCandleDateTimeKst()
+                        .truncatedTo(java.time.temporal.ChronoUnit.HOURS);
+                LocalDateTime liveHour = liveCandle.getCandleDateTimeKst()
+                        .truncatedTo(java.time.temporal.ChronoUnit.HOURS);
+                if (lastHour.equals(liveHour)) {
+                    rawList.remove(rawList.size() - 1);
+                }
+            }
+            rawList.add(liveCandle);
+            return buildDataset(market, resample4H(rawList));
+        }
+    	
+        // 해당 타임프레임 단위로 DB에서 직접 조회
+        List<CandleDTO> list = candleDAO.getCandles(market, timeframe, MAX_CANDLE_COUNT);
+        Collections.reverse(list); // DESC → ASC
+
+        // liveCandle이 없으면 DB 데이터만으로 렌더링
         if (liveCandle == null) {
-            if (rawList.isEmpty()) return emptyDataset(market);
-            return buildDataset(market, resampleCandles(rawList, timeframe));
+            if (list.isEmpty()) return emptyDataset(market);
+            return buildDataset(market, list);
         }
 
-        // liveCandle과 같은 분봉이 rawList 끝에 있을 경우 제거 (중복 방지)
-        if (!rawList.isEmpty() && liveCandleMinuteStart != null) {
-            CandleDTO last = rawList.get(rawList.size() - 1);
-            LocalDateTime lastMinute = last.getCandleDateTimeKst().truncatedTo(java.time.temporal.ChronoUnit.MINUTES);
-            if (lastMinute.equals(liveCandleMinuteStart)) {
-                rawList.remove(rawList.size() - 1);
-            }
-        }
-
-        List<CandleDTO> resampled = rawList.isEmpty()
-                ? new ArrayList<>()
-                : resampleCandles(rawList, timeframe);
-
-        // ── 타임프레임에 따른 liveCandle 합산 ──────────────────
         if (timeframe == TF_1M) {
-            // 1분봉: 그냥 추가
-            resampled.add(liveCandle);
+            // ── 1분봉 ──
+            // DB 마지막 캔들이 liveCandle과 같은 분이면 제거 후 liveCandle로 대체
+            if (!list.isEmpty() && liveCandleMinuteStart != null) {
+                CandleDTO last = list.get(list.size() - 1);
+                LocalDateTime lastMinute = last.getCandleDateTimeKst()
+                        .truncatedTo(java.time.temporal.ChronoUnit.MINUTES);
+                if (lastMinute.equals(liveCandleMinuteStart)) {
+                    list.remove(list.size() - 1);
+                }
+            }
+            list.add(liveCandle);
         } else {
-            // 상위 타임프레임: liveCandle이 마지막 리샘플 캔들과 같은 블록이면 병합
-            if (!resampled.isEmpty()) {
-                CandleDTO last = resampled.get(resampled.size() - 1);
+            // ── 상위 타임프레임 ──
+            // liveCandle(1분봉)이 DB 마지막 캔들과 같은 타임프레임 블록이면 종가/고가/저가 병합
+            if (!list.isEmpty()) {
+                CandleDTO last = list.get(list.size() - 1);
                 String lastBlock = calcBlockKey(last.getCandleDateTimeKst(), timeframe);
                 String liveBlock = calcBlockKey(liveCandle.getCandleDateTimeKst(), timeframe);
 
                 if (lastBlock.equals(liveBlock)) {
-                    // 같은 블록 → 기존 마지막 캔들에 liveCandle 가격 반영
-                    last.setTradePrice(liveCandle.getTradePrice());
-                    last.setHighPrice(Math.max(last.getHighPrice(), liveCandle.getHighPrice()));
-                    last.setLowPrice(Math.min(last.getLowPrice(), liveCandle.getLowPrice()));
+                    // 같은 블록: DB 마지막 캔들의 종가/고/저를 실시간 가격으로 갱신
+                    // (원본 객체를 직접 수정하지 않고 복사본 사용)
+                    CandleDTO merged = copyCandle(last);
+                    merged.setTradePrice(liveCandle.getTradePrice());
+                    merged.setHighPrice(Math.max(last.getHighPrice(), liveCandle.getHighPrice()));
+                    merged.setLowPrice(Math.min(last.getLowPrice(), liveCandle.getLowPrice()));
+                    list.set(list.size() - 1, merged);
                 } else {
-                    // 새 블록 시작
-                    resampled.add(liveCandle);
+                    // 새 블록 시작: liveCandle을 해당 타임프레임 블록의 시작 캔들로 추가
+                    CandleDTO newBlock = copyCandle(liveCandle);
+                    newBlock.setUnit(timeframe);
+                    list.add(newBlock);
                 }
             } else {
-                resampled.add(liveCandle);
+                list.add(liveCandle);
             }
         }
 
-        return buildDataset(market, resampled);
+        return buildDataset(market, list);
+    }
+
+    /** CandleDTO 얕은 복사 (DB 원본 객체 보호용) */
+    private CandleDTO copyCandle(CandleDTO src) {
+        CandleDTO c = new CandleDTO();
+        c.setMarket(src.getMarket());
+        c.setCandleDateTimeKst(src.getCandleDateTimeKst());
+        c.setCandleDateTimeUtc(src.getCandleDateTimeUtc());
+        c.setOpeningPrice(src.getOpeningPrice());
+        c.setHighPrice(src.getHighPrice());
+        c.setLowPrice(src.getLowPrice());
+        c.setTradePrice(src.getTradePrice());
+        c.setTimestamp(src.getTimestamp());
+        c.setCandleAccTradePrice(src.getCandleAccTradePrice());
+        c.setCandleAccTradeVolume(src.getCandleAccTradeVolume());
+        c.setUnit(src.getUnit());
+        return c;
     }
 
     private OHLCDataset emptyDataset(String market) {
@@ -362,7 +401,7 @@ public class CandleChartPanel extends JPanel {
 
     /**
      * 주어진 시각이 속하는 타임프레임 블록 키를 반환합니다.
-     * (resampleCandles의 키 산출 로직과 동일)
+     * liveCandle을 상위 타임프레임 블록에 병합할 때 사용됩니다.
      */
     private String calcBlockKey(LocalDateTime kst, int timeframeMinutes) {
         if (timeframeMinutes == TF_1MON) {
@@ -435,7 +474,8 @@ public class CandleChartPanel extends JPanel {
      * 타임프레임(분)을 밀리초로 변환합니다.
      * 1달봉은 30일 * 24h * 60m 기준.
      */
-    private double getCandleIntervalMs(int timeframeMinutes) {
+    //여기 계속 고치네;;
+    private double getCandleIntervalMs(int timeframeMinutes) { 
         long minutes = (timeframeMinutes == TF_1MON) ? 30L * 24 * 60 : timeframeMinutes;
         return minutes * 60_000.0;
     }
@@ -668,14 +708,6 @@ public class CandleChartPanel extends JPanel {
 
         // ── 분봉 경계 감지: 새로운 분으로 넘어갔으면 liveCandle 교체 ──
         if (liveCandleMinuteStart == null || !liveCandleMinuteStart.equals(currentMinuteStart)) {
-            // 기존 liveCandle이 있으면 완성된 캔들로 런타임 캐시에 보관
-            if (liveCandle != null && liveCandleMinuteStart != null) {
-                runtimeCandles.add(liveCandle);
-                // 최대 개수 초과 시 가장 오래된 캔들 제거
-                if (runtimeCandles.size() > MAX_RUNTIME_CANDLES) {
-                    runtimeCandles.remove(0);
-                }
-            }
             liveCandleMinuteStart = currentMinuteStart;
             liveCandle = createNewLiveCandle(latestLivePrice, currentMinuteStart);
         }
@@ -738,69 +770,52 @@ public class CandleChartPanel extends JPanel {
     // ════════════════════════════════════════════════════
 
     /**
-     * 1분봉 리스트를 지정된 타임프레임(분)으로 리샘플링
-     * 합니다.
+     * 1시간봉(unit=60) 리스트를 4시간봉으로 리샘플링합니다.
+     * KST 자정(00:00) 기준으로 0~3시, 4~7시, 8~11시, 12~15시, 16~19시, 20~23시 블록으로 나눕니다.
      */
-    private List<CandleDTO> resampleCandles(List<CandleDTO> rawList, int timeframeMinutes) {
-        if (timeframeMinutes <= 1) return new ArrayList<>(rawList);
-
-        boolean isMonthly = (timeframeMinutes == TF_1MON);
+    private List<CandleDTO> resample4H(List<CandleDTO> hourList) {
         List<CandleDTO> result = new ArrayList<>();
         List<CandleDTO> group  = new ArrayList<>();
         String groupKey = null;
 
-        for (CandleDTO candle : rawList) {
-            LocalDateTime kst = candle.getCandleDateTimeKst();
-            String key = calcBlockKey(kst, timeframeMinutes);
-
+        for (CandleDTO candle : hourList) {
+            String key = calcBlockKey(candle.getCandleDateTimeKst(), TF_4H);
             if (!key.equals(groupKey)) {
-                if (!group.isEmpty()) {
-                    result.add(mergeGroup(group, timeframeMinutes));
-                    group.clear();
-                }
+                if (!group.isEmpty()) result.add(merge4HGroup(group));
+                group.clear();
                 groupKey = key;
             }
             group.add(candle);
         }
-        if (!group.isEmpty()) result.add(mergeGroup(group, timeframeMinutes));
-
+        if (!group.isEmpty()) result.add(merge4HGroup(group));
         return result;
     }
 
-    private CandleDTO mergeGroup(List<CandleDTO> group, int timeframeMinutes) {
+    private CandleDTO merge4HGroup(List<CandleDTO> group) {
         CandleDTO first = group.get(0);
         CandleDTO last  = group.get(group.size() - 1);
-        CandleDTO m = new CandleDTO();
-        
-        //정확한 타임프레인 블록 시작 시간 계산
-        LocalDateTime kst = first.getCandleDateTimeKst();
-        LocalDateTime blockStartTime;
 
-        if (timeframeMinutes == TF_1MON) {
-            // 월봉인 경우 무조건 해당 월의 1일 00시 00분으로 고정
-            blockStartTime = LocalDateTime.of(kst.getYear(), kst.getMonthValue(), 1, 0, 0);
-        } else {
-            // KST 자정(1970-01-01 09:00)을 기준점으로 사용해야 KST 블록 경계가 정확히 맞춰짐
-            // UTC 00:00 기준 사용 시 KST +9시간이 블록 경계를 밀어 캔들이 틀린 위치에 그려짐
-            LocalDateTime KST_EPOCH = LocalDateTime.of(1970, 1, 1, 9, 0);
-            long epochMinutes = ChronoUnit.MINUTES.between(KST_EPOCH, kst);
-            long blockEpochMinutes = (epochMinutes / timeframeMinutes) * timeframeMinutes;
-            blockStartTime = KST_EPOCH.plusMinutes(blockEpochMinutes);
-        }
-        
+        // 블록 시작 시각: KST 기준 4시간 경계 (0, 4, 8, 12, 16, 20시)
+        LocalDateTime kst = first.getCandleDateTimeKst();
+        LocalDateTime KST_EPOCH = LocalDateTime.of(1970, 1, 1, 9, 0);
+        long epochMinutes = ChronoUnit.MINUTES.between(KST_EPOCH, kst);
+        long blockStart   = (epochMinutes / TF_4H) * TF_4H;
+        LocalDateTime blockStartTime = KST_EPOCH.plusMinutes(blockStart);
+
+        CandleDTO m = new CandleDTO();
         m.setMarket(first.getMarket());
         m.setCandleDateTimeKst(blockStartTime);
         m.setCandleDateTimeUtc(blockStartTime.minusHours(9));
-        
         m.setOpeningPrice(first.getOpeningPrice());
         m.setTradePrice(last.getTradePrice());
         m.setHighPrice(group.stream().mapToDouble(CandleDTO::getHighPrice).max().orElse(0));
         m.setLowPrice(group.stream().mapToDouble(CandleDTO::getLowPrice).min().orElse(0));
         m.setCandleAccTradeVolume(group.stream().mapToDouble(CandleDTO::getCandleAccTradeVolume).sum());
-        m.setUnit(currentTimeframe);
+        m.setUnit(TF_4H);
         return m;
     }
-
+    
+    
     private OHLCDataset buildDataset(String market, List<CandleDTO> list) {
         int count = list.size();
         Date[]   date   = new Date[count];
@@ -844,7 +859,6 @@ public class CandleChartPanel extends JPanel {
         this.currentMarket = "KRW-" + coinSymbol;
         liveCandle = null;
         liveCandleMinuteStart = null;
-        runtimeCandles.clear();
         refreshChart();
         if (backtestTargetTime == null) {
             connectWebSocket();
@@ -875,7 +889,6 @@ public class CandleChartPanel extends JPanel {
         this.backtestTargetTime = null;
         liveCandle = null;
         liveCandleMinuteStart = null;
-        runtimeCandles.clear();
         startLiveTimer();
         connectWebSocket();
         refreshChart();
