@@ -341,10 +341,6 @@ public class DownloadDatabase {
     
     
     public static void main(String[] args) {
-        // DB 연결 확인 (필요 시 initDatabase)
-    	System.out.println(">>> 데이터 수집 프로세스 시작 <<<");
-        // 6개월 치 데이터 수집 실행
-        // unit: 1(1분), 60(1시간), 240(4시간) 권장
-        importData(1); 
+        updateData(1); 
     }
 }
