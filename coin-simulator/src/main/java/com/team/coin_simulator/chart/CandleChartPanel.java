@@ -55,10 +55,9 @@ public class CandleChartPanel extends JPanel {
     private static final int DISPLAY_1D   = 55;
     private static final int DISPLAY_1MON = 55;
 
-    /**
-     * DB에서 가져올 1분봉 최대 개수.
-     */
-    private static final int DB_FETCH_LIMIT = 1000000;
+    
+     //각 타임프레임별로 생성할 최대 캔들 개수
+    private static final int MAX_CANDLE_COUNT = 5000;
 
     // ── 차트 컴포넌트 ────────────────────────────────────
     private JFreeChart chart;
@@ -67,12 +66,12 @@ public class CandleChartPanel extends JPanel {
     private CandleDAO candleDAO = new CandleDAO();
     private JButton selectedButton;
 
-    // ── 현재 상태 ────────────────────────────────────────
-    private String currentMarket = "KRW-BTC";
+    // ── 초기 상태 ────────────────────────────────────────
+    private String currentMarket = "KRW-BTC"; //기본 비트코인
     private int currentTimeframe = TF_1M; // 기본 1분봉
     private Point lastMousePoint;
 
-    // ── 백테스팅 상태 ─────────────────────────────────────
+    // ── 초기 백테스팅 상태 ─────────────────────────────────────
     private LocalDateTime backtestTargetTime = null;
 
     // ── 실시간 라이브 캔들 ────────────────────────────────
@@ -89,10 +88,19 @@ public class CandleChartPanel extends JPanel {
      */
     private LocalDateTime liveCandleMinuteStart = null;
 
+    /**
+     * 프로그램 실행 중 분봉이 넘어갈 때마다 완성된 liveCandle을 누적 저장합니다.
+     * DB가 갱신되지 않아도 이 리스트의 캔들이 차트에 렌더링되어 공백을 메웁니다.
+     * 최대 MAX_RUNTIME_CANDLES개까지 보관합니다.
+     */
+    private final List<CandleDTO> runtimeCandles = new ArrayList<>();
+    private static final int MAX_RUNTIME_CANDLES = 100;
+
     // ── 실시간 타이머 ────────────────────────────────────
     private Timer liveTimer;
     private static final int LIVE_RENDER_MS = 500; // 500ms마다 화면 갱신
     private volatile double latestLivePrice = -1;
+    private volatile long latestLiveTimestamp = -1; //거래소 서버의 타임스탬프 저장용
 
     // ── 웹소켓 ───────────────────────────────────────────
     private UpbitWebSocket webSocketClient;
@@ -114,9 +122,6 @@ public class CandleChartPanel extends JPanel {
         chart.setTitle(getCurrentMarketSymbol());
         plot = (XYPlot) chart.getPlot();
 
-        
-        
-        
         configureChartUI();
         setupChartPanel();
         createButtonPanel();
@@ -140,10 +145,8 @@ public class CandleChartPanel extends JPanel {
         plot.setRangeAxisLocation(AxisLocation.TOP_OR_RIGHT);
         NumberAxis yAxis = (NumberAxis) plot.getRangeAxis();
         yAxis.setAutoRangeIncludesZero(false);
-        
-        
 
-        // ── Y축 소수점 표기 수정: 과학적 표기법(9.15E-3) 대신 일반 소수점(0.00915) ──
+        //과학적 표기법(9.15E-3) 대신 일반 소수점(0.00915)
         yAxis.setNumberFormatOverride(buildPriceFormat());
 
         DateAxis domainAxis = (DateAxis) plot.getDomainAxis();
@@ -151,8 +154,6 @@ public class CandleChartPanel extends JPanel {
         domainAxis.setTickLabelFont(new Font("Nanum Gothic", Font.PLAIN, 11));
         domainAxis.setAutoTickUnitSelection(true);
 
-        
-        
         CandlestickRenderer renderer = new CandlestickRenderer();
         renderer.setAutoWidthMethod(CandlestickRenderer.WIDTHMETHOD_SMALLEST);
         renderer.setAutoWidthGap(0.0);   // 간격 없음 — zoom 시 벌어지는 현상 제거
@@ -253,10 +254,13 @@ public class CandleChartPanel extends JPanel {
     private OHLCDataset createDataset(String market, int timeframe, LocalDateTime targetTime) {
         List<CandleDTO> rawList;
 
+        // DB에서 가져올 1분봉 총 개수 계산 (예: 1시간봉이면 60 * 5000 = 300,000개)
+        int fetchLimit = timeframe * MAX_CANDLE_COUNT;
+
         if (targetTime != null) {
-            rawList = candleDAO.getHistoricalCandles(market, 1, targetTime, DB_FETCH_LIMIT);
+            rawList = candleDAO.getHistoricalCandles(market, 1, targetTime, fetchLimit);
         } else {
-            rawList = candleDAO.getCandles(market, 1, DB_FETCH_LIMIT);
+            rawList = candleDAO.getCandles(market, 1, fetchLimit);
         }
 
         if (rawList.isEmpty()) return emptyDataset(market);
@@ -279,17 +283,37 @@ public class CandleChartPanel extends JPanel {
      * ────────────────────────────────────────────────────────────────
      */
     private OHLCDataset createDatasetWithLiveCandle(String market, int timeframe) {
-        List<CandleDTO> rawList = candleDAO.getCandles(market, 1, DB_FETCH_LIMIT);
+        // DB에서 가져올 1분봉 총 개수 계산
+        int fetchLimit = timeframe * MAX_CANDLE_COUNT;
+        
+        List<CandleDTO> rawList = candleDAO.getCandles(market, 1, fetchLimit);
         Collections.reverse(rawList);
 
-        // liveCandle이 없으면 DB 데이터만으로 렌더링
+        // ── 런타임 캔들 병합 ────────────────────────────────────────
+        // DB에 없는 실행 중 생성된 분봉들을 rawList 뒤에 이어붙임.
+        // DB의 마지막 캔들 이후 시간대의 런타임 캔들만 추가 (중복 방지)
+        if (!runtimeCandles.isEmpty()) {
+            LocalDateTime dbLastTime = rawList.isEmpty() ? null
+                    : rawList.get(rawList.size() - 1).getCandleDateTimeKst()
+                             .truncatedTo(java.time.temporal.ChronoUnit.MINUTES);
+
+            for (CandleDTO rc : runtimeCandles) {
+                LocalDateTime rcTime = rc.getCandleDateTimeKst()
+                                        .truncatedTo(java.time.temporal.ChronoUnit.MINUTES);
+                // DB에 이미 있는 시간대는 건너뜀
+                if (dbLastTime != null && !rcTime.isAfter(dbLastTime)) continue;
+                rawList.add(rc);
+            }
+        }
+        // ────────────────────────────────────────────────────────────
+
+        // liveCandle이 없으면 DB+런타임 데이터만으로 렌더링
         if (liveCandle == null) {
             if (rawList.isEmpty()) return emptyDataset(market);
             return buildDataset(market, resampleCandles(rawList, timeframe));
         }
 
-        // liveCandle과 같은 분봉이 DB에도 있을 경우 제거 (중복 방지)
-        // DB는 확정된 캔들만 있어야 하므로 마지막 캔들의 시각이 liveCandleMinuteStart와 같으면 제외
+        // liveCandle과 같은 분봉이 rawList 끝에 있을 경우 제거 (중복 방지)
         if (!rawList.isEmpty() && liveCandleMinuteStart != null) {
             CandleDTO last = rawList.get(rawList.size() - 1);
             LocalDateTime lastMinute = last.getCandleDateTimeKst().truncatedTo(java.time.temporal.ChronoUnit.MINUTES);
@@ -344,7 +368,9 @@ public class CandleChartPanel extends JPanel {
         if (timeframeMinutes == TF_1MON) {
             return kst.getYear() + "-" + String.format("%02d", kst.getMonthValue());
         }
-        long epochMinutes = ChronoUnit.MINUTES.between(LocalDateTime.of(1970, 1, 1, 0, 0), kst);
+        // KST(UTC+9) 기준으로 블록 경계를 맞추기 위해 기준점을 1970-01-01 09:00(KST 자정)으로 설정
+        // UTC 00:00 기준으로 계산하면 KST 데이터의 블록 경계가 9시간 어긋나 캔들이 틀린 위치에 그려짐
+        long epochMinutes = ChronoUnit.MINUTES.between(LocalDateTime.of(1970, 1, 1, 9, 0), kst);
         return Long.toString(epochMinutes / timeframeMinutes);
     }
 
@@ -627,13 +653,29 @@ public class CandleChartPanel extends JPanel {
     private void onLiveTick() {
         if (backtestTargetTime != null || latestLivePrice <= 0) return;
 
-        LocalDateTime now = LocalDateTime.now();
-        LocalDateTime currentMinuteStart = now.truncatedTo(java.time.temporal.ChronoUnit.MINUTES);
+        // ★ 수정됨: PC 로컬 시간이 아닌 거래소 서버 타임스탬프 기준 시간 계산
+        LocalDateTime serverNow;
+        if (latestLiveTimestamp > 0) {
+            // 웹소켓에서 받은 서버 타임스탬프(ms)를 LocalDateTime KST로 변환
+            serverNow = LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(latestLiveTimestamp), java.time.ZoneId.of("Asia/Seoul"));
+        } else {
+            // 웹소켓 데이터를 아직 못 받았을 때의 임시 방편
+            serverNow = LocalDateTime.now();
+        }
+
+        // 현재 시간을 분 단위로 절사 (이제 PC 시간이 달라도 거래소 서버 시간에 정확히 맞춰짐)
+        LocalDateTime currentMinuteStart = serverNow.truncatedTo(java.time.temporal.ChronoUnit.MINUTES);
 
         // ── 분봉 경계 감지: 새로운 분으로 넘어갔으면 liveCandle 교체 ──
         if (liveCandleMinuteStart == null || !liveCandleMinuteStart.equals(currentMinuteStart)) {
-            // 직전 분봉을 DB에서 가져와 차트에 반영
-            // (DB가 이미 확정 데이터를 갖고 있으므로 별도 저장 불필요)
+            // 기존 liveCandle이 있으면 완성된 캔들로 런타임 캐시에 보관
+            if (liveCandle != null && liveCandleMinuteStart != null) {
+                runtimeCandles.add(liveCandle);
+                // 최대 개수 초과 시 가장 오래된 캔들 제거
+                if (runtimeCandles.size() > MAX_RUNTIME_CANDLES) {
+                    runtimeCandles.remove(0);
+                }
+            }
             liveCandleMinuteStart = currentMinuteStart;
             liveCandle = createNewLiveCandle(latestLivePrice, currentMinuteStart);
         }
@@ -657,18 +699,24 @@ public class CandleChartPanel extends JPanel {
      * 외부(WebSocket 콜백 등)에서 현재가를 주입합니다.
      * 백테스팅 모드에서는 무시됩니다.
      */
-    public void setLatestPriceFromWebSocket(double price) {
+    public void setLatestPriceFromWebSocket(double price, long serverTimestamp) {
         if (backtestTargetTime != null) return;
         this.latestLivePrice = price;
+        this.latestLiveTimestamp = serverTimestamp; // 서버 시간 갱신
     }
 
     /**
-     * @deprecated setLatestPriceFromWebSocket + onLiveTick 방식으로 대체되었습니다.
+     * 서버 타임스탬프 없이 가격만 전달받는 경우 (UpbitWebSocket 호환용).
+     * trade_price와 함께 ticker의 timestamp 필드를 파싱하도록 UpbitWebSocket을 수정하는 것이 권장되지만,
+     * 파싱 실패 시에도 동작하도록 PC 시간 기반 fallback을 유지합니다.
      */
-    @Deprecated
-    public void updateLivePrice(double price) {
-        setLatestPriceFromWebSocket(price);
+    public void setLatestPriceFromWebSocket(double price) {
+        if (backtestTargetTime != null) return;
+        this.latestLivePrice = price;
+        // serverTimestamp를 -1로 두면 onLiveTick()에서 LocalDateTime.now() fallback 사용
     }
+
+    
 
     private CandleDTO createNewLiveCandle(double price, LocalDateTime minuteStart) {
         CandleDTO c = new CandleDTO();
@@ -690,7 +738,8 @@ public class CandleChartPanel extends JPanel {
     // ════════════════════════════════════════════════════
 
     /**
-     * 1분봉 리스트를 지정된 타임프레임(분)으로 리샘플링합니다.
+     * 1분봉 리스트를 지정된 타임프레임(분)으로 리샘플링
+     * 합니다.
      */
     private List<CandleDTO> resampleCandles(List<CandleDTO> rawList, int timeframeMinutes) {
         if (timeframeMinutes <= 1) return new ArrayList<>(rawList);
@@ -706,25 +755,43 @@ public class CandleChartPanel extends JPanel {
 
             if (!key.equals(groupKey)) {
                 if (!group.isEmpty()) {
-                    result.add(mergeGroup(group));
+                    result.add(mergeGroup(group, timeframeMinutes));
                     group.clear();
                 }
                 groupKey = key;
             }
             group.add(candle);
         }
-        if (!group.isEmpty()) result.add(mergeGroup(group));
+        if (!group.isEmpty()) result.add(mergeGroup(group, timeframeMinutes));
 
         return result;
     }
 
-    private CandleDTO mergeGroup(List<CandleDTO> group) {
+    private CandleDTO mergeGroup(List<CandleDTO> group, int timeframeMinutes) {
         CandleDTO first = group.get(0);
         CandleDTO last  = group.get(group.size() - 1);
         CandleDTO m = new CandleDTO();
+        
+        //정확한 타임프레인 블록 시작 시간 계산
+        LocalDateTime kst = first.getCandleDateTimeKst();
+        LocalDateTime blockStartTime;
+
+        if (timeframeMinutes == TF_1MON) {
+            // 월봉인 경우 무조건 해당 월의 1일 00시 00분으로 고정
+            blockStartTime = LocalDateTime.of(kst.getYear(), kst.getMonthValue(), 1, 0, 0);
+        } else {
+            // KST 자정(1970-01-01 09:00)을 기준점으로 사용해야 KST 블록 경계가 정확히 맞춰짐
+            // UTC 00:00 기준 사용 시 KST +9시간이 블록 경계를 밀어 캔들이 틀린 위치에 그려짐
+            LocalDateTime KST_EPOCH = LocalDateTime.of(1970, 1, 1, 9, 0);
+            long epochMinutes = ChronoUnit.MINUTES.between(KST_EPOCH, kst);
+            long blockEpochMinutes = (epochMinutes / timeframeMinutes) * timeframeMinutes;
+            blockStartTime = KST_EPOCH.plusMinutes(blockEpochMinutes);
+        }
+        
         m.setMarket(first.getMarket());
-        m.setCandleDateTimeKst(first.getCandleDateTimeKst());
-        m.setCandleDateTimeUtc(first.getCandleDateTimeUtc());
+        m.setCandleDateTimeKst(blockStartTime);
+        m.setCandleDateTimeUtc(blockStartTime.minusHours(9));
+        
         m.setOpeningPrice(first.getOpeningPrice());
         m.setTradePrice(last.getTradePrice());
         m.setHighPrice(group.stream().mapToDouble(CandleDTO::getHighPrice).max().orElse(0));
@@ -772,15 +839,12 @@ public class CandleChartPanel extends JPanel {
     }
 
 
-    // ════════════════════════════════════════════════════
-    //  공개 API
-    // ════════════════════════════════════════════════════
-
     /** 코인 종목 변경 */
     public void changeMarket(String coinSymbol) {
         this.currentMarket = "KRW-" + coinSymbol;
         liveCandle = null;
         liveCandleMinuteStart = null;
+        runtimeCandles.clear();
         refreshChart();
         if (backtestTargetTime == null) {
             connectWebSocket();
@@ -811,6 +875,7 @@ public class CandleChartPanel extends JPanel {
         this.backtestTargetTime = null;
         liveCandle = null;
         liveCandleMinuteStart = null;
+        runtimeCandles.clear();
         startLiveTimer();
         connectWebSocket();
         refreshChart();
