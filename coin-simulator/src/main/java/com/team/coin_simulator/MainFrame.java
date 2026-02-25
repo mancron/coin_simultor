@@ -396,7 +396,6 @@ public class MainFrame extends JFrame {
     }
 
     @Override
-    @Override
     public void dispose() {
         shutdownBackgroundTasks();
 
@@ -421,3 +420,4 @@ public class MainFrame extends JFrame {
 
         SwingUtilities.invokeLater(() -> new MainFrame("test_user1"));
     }
+}
