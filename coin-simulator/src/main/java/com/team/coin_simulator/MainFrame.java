@@ -406,7 +406,7 @@ public class MainFrame extends JFrame {
     //진입점
     public static void main(String[] args) {
 
-        // ✅ 프로그램 완전 종료시에만 DB 풀 닫기
+        // 프로그램 완전 종료시에만 DB 풀 닫기
         Runtime.getRuntime().addShutdownHook(new Thread(DBConnection::close));
 
         try {

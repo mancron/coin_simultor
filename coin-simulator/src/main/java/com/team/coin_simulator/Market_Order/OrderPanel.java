@@ -22,7 +22,7 @@ public class OrderPanel extends JPanel implements UpbitWebSocketDao.TickerListen
  // OrderPanel 필드
     private java.util.concurrent.ScheduledExecutorService scheduler;
     
-    // 💡 가짜(mock) 데이터 삭제하고, DB에서 불러온 진짜 잔고를 담을 맵
+    // 가짜(mock) 데이터 삭제하고, DB에서 불러온 진짜 잔고를 담을 맵
     private Map<String, BigDecimal> realBalance = new HashMap<>();
     private Map<String, BigDecimal> realLocked = new HashMap<>();
     
@@ -198,7 +198,7 @@ public class OrderPanel extends JPanel implements UpbitWebSocketDao.TickerListen
         }, 0, 2, java.util.concurrent.TimeUnit.SECONDS); // 주기는 너 기존에 맞춰
     }
     
-    // 💡 [핵심] DB와 동기화하는 메서드 (가짜 데이터 대신 진짜 데이터를 읽어옴)
+    //DB와 동기화하는 메서드
     private void refreshDBData() {
         realBalance.clear();
         realLocked.clear();
@@ -234,7 +234,7 @@ public class OrderPanel extends JPanel implements UpbitWebSocketDao.TickerListen
         });
     }
 
- // ✅ MainFrame이 호출할 종료 메서드
+ // MainFrame이 호출할 종료 메서드
     public void shutdown() {
         try {
             if (scheduler != null && !scheduler.isShutdown()) {
@@ -271,7 +271,6 @@ public class OrderPanel extends JPanel implements UpbitWebSocketDao.TickerListen
         new Thread(() -> {
             try {
             	BigDecimal realTradeVolume = new BigDecimal(tradeVolumeStr);
-            	System.out.println(">> [CCTV] 업비트 실시간 비트코인 거래량: " + realTradeVolume + " 개");
 
                 // 파라미터 3개(코인명, 현재가, 거래량)를 정확히 넘겨줍니다.
 List<OrderDTO> executedList = orderDAO.checkAndExecuteLimitOrders(symbol, currentPrice, realTradeVolume);
@@ -313,6 +312,7 @@ List<OrderDTO> executedList = orderDAO.checkAndExecuteLimitOrders(symbol, curren
     private void updateInfoLabel() {
         String assetCode = (sideIdx == 0) ? "KRW" : selectedCoinCode; 
         BigDecimal balance = realBalance.getOrDefault(assetCode, BigDecimal.ZERO);
+        BigDecimal locked = realLocked.getOrDefault(assetCode, BigDecimal.ZERO);
         String format = assetCode.equals("KRW") ? "%,.0f" : "%.8f";
         valAvailable.setText(String.format(format + " %s", balance, assetCode));
     }

@@ -33,7 +33,7 @@ public class OrderDAO {
                 pstmt.setString(5, order.getSide());
                 pstmt.setBigDecimal(6, order.getOriginalPrice());
                 pstmt.setBigDecimal(7, order.getOriginalVolume());
-                pstmt.setBigDecimal(8, order.getRemainingVolume());
+                pstmt.setBigDecimal(8, order.getOriginalVolume());
                 pstmt.executeUpdate();
             }
 
@@ -491,16 +491,19 @@ public List<OrderDTO> checkAndExecuteLimitOrders(String market, BigDecimal curre
             }
         }
 
-        //유저의 미체결 대기 주문(WAIT) 목록을 가져오는 메서드 (하위 호환용)
-        @Deprecated
-        public List<OrderDTO> getOpenOrders(String userId) {
+     // 유저의 특정 세션 내 미체결 대기 주문(WAIT) 목록을 가져오는 메서드
+        public List<OrderDTO> getOpenOrders(String userId, long sessionId) {
             List<OrderDTO> openOrders = new ArrayList<>();
-            String sql = "SELECT * FROM orders WHERE user_id = ? AND status = 'WAIT'";
+            
+            //SQL문에 session_id 조건을 반드시 추가!
+            String sql = "SELECT * FROM orders WHERE user_id = ? AND session_id = ? AND status = 'WAIT'";
             
             try (Connection conn = DBConnection.getConnection();
                  PreparedStatement pstmt = conn.prepareStatement(sql)) {
                 
                 pstmt.setString(1, userId);
+                pstmt.setLong(2, sessionId); //세션 ID 바인딩
+                
                 try (ResultSet rs = pstmt.executeQuery()) {
                     while (rs.next()) {
                         OrderDTO order = new OrderDTO();
@@ -508,7 +511,10 @@ public List<OrderDTO> checkAndExecuteLimitOrders(String market, BigDecimal curre
                         order.setSide(rs.getString("side"));
                         order.setOriginalPrice(rs.getBigDecimal("original_price"));
                         order.setOriginalVolume(rs.getBigDecimal("original_volume"));
+                        
+                        //DB의 남은 수량을 DTO에 담습니다.
                         order.setRemainingVolume(rs.getBigDecimal("remaining_volume"));
+                        
                         order.setStatus(rs.getString("status"));
                         order.setMarket(rs.getString("market")); 
                         
@@ -516,9 +522,9 @@ public List<OrderDTO> checkAndExecuteLimitOrders(String market, BigDecimal curre
                     }
                 }
             } catch (SQLException e) {
-                System.err.println("미체결 주문 로드 실패: " + e.getMessage());
+                System.err.println(">> [DB 에러] 미체결 주문 로드 실패: " + e.getMessage());
                 e.printStackTrace();
             }
             return openOrders;
         }
-    }
+}

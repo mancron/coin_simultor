@@ -126,8 +126,10 @@ public class OrderEditListPanel extends JPanel {
         center.setBackground(Color.WHITE);
         center.add(new JLabel("가격"));
         center.add(new JLabel(String.format("%,.0f KRW", order.getOriginalPrice()), SwingConstants.RIGHT));
-        center.add(new JLabel("수량"));
-        center.add(new JLabel(order.getOriginalVolume() + " " + coinCode, SwingConstants.RIGHT)); 
+        
+        // 💡 [핵심 수정] getOriginalVolume -> getRemainingVolume 으로 변경!
+        center.add(new JLabel("미체결 수량")); 
+        center.add(new JLabel(order.getRemainingVolume() + " " + coinCode, SwingConstants.RIGHT)); 
         
         JPanel btnPanel = new JPanel(new GridLayout(1, 2, 5, 0)); 
         btnPanel.setBackground(Color.WHITE);
@@ -150,26 +152,29 @@ public class OrderEditListPanel extends JPanel {
         return item;
     }
 
-    //취소 로직
+    //취소 로직 (현재 남아있는 만큼만 환불받도록 수정)
     private void cancelOrder(OrderDTO order, String coinCode) {
-        String curr = order.getSide().equals("BID") ? "KRW" : coinCode;
-        BigDecimal lockedAmt = order.getSide().equals("BID") ? order.getOriginalPrice().multiply(order.getOriginalVolume()) : order.getOriginalVolume();
+        //남은 수량(remainingVolume)만큼만 Locked 해제해야 합니다.
+        BigDecimal currentRemaining = order.getRemainingVolume();
+        BigDecimal lockedAmt = order.getSide().equals("BID") ? 
+                               order.getOriginalPrice().multiply(currentRemaining) : currentRemaining;
 
         boolean isDBSuccess = orderDAO.cancelOrder(order.getOrderId(), this.userId, order.getSide(), lockedAmt);
         
         if (isDBSuccess) {
             JOptionPane.showMessageDialog(this, "주문이 취소되었습니다.");
-            if (onUpdateCallback != null) onUpdateCallback.run(); // 성공하면 메인 화면에게 "나 데이터 바꿨으니 새로고침 해줘!" 라고 알림
+            if (onUpdateCallback != null) onUpdateCallback.run(); 
         } else {
-            JOptionPane.showMessageDialog(this, "DB 취소 처리에 실패했습니다.", "오류", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(this, "취소 처리에 실패했습니다. (이미 체결되었을 수 있습니다.)", "오류", JOptionPane.ERROR_MESSAGE);
         }
     }
 
-    // 정정 로직
+    //정정 로직 (남은 수량 기준으로 정정 계산)
     private void showModifyDialog(OrderDTO order, String coinCode) {
         JPanel panel = new JPanel(new GridLayout(2, 2, 5, 5));
         JTextField txtPrice = new JTextField(order.getOriginalPrice().toString());
-        JTextField txtQty = new JTextField(order.getOriginalVolume().toString());
+        //정정 창을 띄울 때도 남은 수량을 기본값으로 보여줍니다.
+        JTextField txtQty = new JTextField(order.getRemainingVolume().toString());
 
         panel.add(new JLabel("정정 가격(KRW):")); panel.add(txtPrice);
         panel.add(new JLabel("정정 수량(" + coinCode + "):")); panel.add(txtQty);
@@ -179,25 +184,23 @@ public class OrderEditListPanel extends JPanel {
                 BigDecimal newPrice = new BigDecimal(txtPrice.getText().replace(",", ""));
                 BigDecimal newQty = new BigDecimal(txtQty.getText().replace(",", ""));
 
-                String curr = order.getSide().equals("BID") ? "KRW" : coinCode;
+                // 💡 [핵심 수정] 현재 금고(locked)에 묶여있는 돈은 '남은 수량' 기준입니다.
                 BigDecimal oldLockedAmt = order.getSide().equals("BID") ? 
-                        order.getOriginalPrice().multiply(order.getOriginalVolume()) : order.getOriginalVolume();
+                                          order.getOriginalPrice().multiply(order.getRemainingVolume()) : order.getRemainingVolume();
 
-                BigDecimal currentLocked = mockBalance.getOrDefault(curr, BigDecimal.ZERO); // (임시 보정)
-                BigDecimal currentBalance = mockBalance.getOrDefault(curr, BigDecimal.ZERO);
+                BigDecimal currentBalance = mockBalance.getOrDefault(order.getSide().equals("BID") ? "KRW" : coinCode, BigDecimal.ZERO);
 
+                // 가상 잔고 계산 (현재 잔고 + 환불받을 돈)
                 BigDecimal tempBalance = currentBalance.add(oldLockedAmt);
                 BigDecimal newRequiredAmt = order.getSide().equals("BID") ? newPrice.multiply(newQty) : newQty;
 
                 if (tempBalance.compareTo(newRequiredAmt) < 0) {
-                    throw new RuntimeException("정정 주문을 위한 잔고가 부족합니다.");
+                    throw new RuntimeException("잔고가 부족합니다.");
                 }
 
                 if (orderDAO.modifyOrder(order.getOrderId(), this.userId, order.getSide(), oldLockedAmt, newRequiredAmt, newPrice, newQty)) {
                     JOptionPane.showMessageDialog(this, "주문이 정정되었습니다.");
-                    if (onUpdateCallback != null) onUpdateCallback.run(); // 성공하면 메인 화면에게 새로고침 요청!
-                } else {
-                    JOptionPane.showMessageDialog(this, "DB 정정 처리에 실패했습니다.", "오류", JOptionPane.ERROR_MESSAGE);
+                    if (onUpdateCallback != null) onUpdateCallback.run(); 
                 }
             } catch (Exception ex) {
                 JOptionPane.showMessageDialog(this, "정정 실패: " + ex.getMessage(), "오류", JOptionPane.ERROR_MESSAGE);
