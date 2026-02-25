@@ -93,6 +93,11 @@ public class MainFrame extends JFrame {
     public MainFrame(String userId) {
         super("가상화폐 모의투자 시스템");
         this.currentUserId = userId;
+        try {
+            UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
 
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setSize(1600, 900);
@@ -115,15 +120,14 @@ public class MainFrame extends JFrame {
         marketSyncThread = new Thread(() -> {
             System.out.println("[MainFrame] 백그라운드에서 캔들 데이터 동기화를 시작합니다...");
             try {
+
                 // 로그아웃/종료 중이면 실행 안 함
                 if (shuttingDown || Thread.currentThread().isInterrupted()) return;
-
-                DownloadDatabase.updateData(1);
 
                 if (shuttingDown || Thread.currentThread().isInterrupted()) return;
 
                 System.out.println("[MainFrame] 데이터 동기화 완료!");
-
+                
                 SwingUtilities.invokeLater(() -> {
                     // ✅ 이미 로그아웃/종료면 UI 접근 금지
                     if (shuttingDown) return;
@@ -392,7 +396,6 @@ public class MainFrame extends JFrame {
         UpbitWebSocketDao.getInstance().start();
     }
 
-   
     @Override
     public void dispose() {
         shutdownBackgroundTasks();
