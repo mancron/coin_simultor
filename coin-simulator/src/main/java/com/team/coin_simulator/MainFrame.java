@@ -60,6 +60,9 @@ public class MainFrame extends JFrame {
 
     // 투자내역 화면 컴포넌트
     private Investment_details_MainPanel investmentPanel;
+    
+    // 현재 선택된 코인 심볼 (호가창 모드 전환 시 필요)
+    private String currentCoinSymbol = "BTC";
 
  // --- MainFrame 필드에 추가 ---
     private volatile boolean shuttingDown = false;
@@ -294,6 +297,11 @@ public class MainFrame extends JFrame {
         UpbitWebSocketDao.getInstance().close();
         chartPanel.loadHistoricalData(currentSimTime);
 
+        //호가창을 백테스팅 모드로 전환
+        if (orderBookPanel != null) {
+            orderBookPanel.switchToBacktestMode(currentCoinSymbol);
+        }
+        
         // 백테스팅 엔진 시작
         BacktestTimeController.getInstance().startSession(
                 currentUserId, currentSessionId, startTime, currentSimTime, endTime);
@@ -319,6 +327,12 @@ public class MainFrame extends JFrame {
                 orderPanel.setSessionId(1L); 
             }
             chartPanel.resetToRealtimeMode();
+            
+            //추가: 호가창을 실시간 모드로 복귀
+            if (orderBookPanel != null) {
+                orderBookPanel.switchToRealtimeMode(currentCoinSymbol);
+            }
+            
             UpbitWebSocketDao.getInstance().start();
         });
     }
@@ -361,6 +375,8 @@ public class MainFrame extends JFrame {
         if (coinSymbol == null || coinSymbol.isEmpty()) return;
         System.out.println("[MainFrame] 코인 선택됨: " + coinSymbol);
 
+        this.currentCoinSymbol = coinSymbol; //현재 코인 심볼 저장
+        
         chartPanel.changeMarket(coinSymbol);
         updateOrderBookPanel(coinSymbol);
 
@@ -376,6 +392,11 @@ public class MainFrame extends JFrame {
         orderBookPanel.setPreferredSize(new Dimension(0, 350));
         orderBookPanel.setBorder(BorderFactory.createTitledBorder(coinSymbol + " 호가창"));
 
+        //추가: 현재 백테스팅 진행 중이면 새 패널도 백테스팅 모드로 전환
+        if (BacktestTimeController.getInstance().isRunning()) {
+            orderBookPanel.switchToBacktestMode(coinSymbol);
+        }
+        
         JPanel centerArea = (JPanel) ((JPanel) tradingPanel.getComponent(1));
         centerArea.remove(1);
         centerArea.add(orderBookPanel, BorderLayout.SOUTH);
