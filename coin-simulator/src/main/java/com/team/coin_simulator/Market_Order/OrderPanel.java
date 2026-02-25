@@ -22,7 +22,7 @@ public class OrderPanel extends JPanel implements UpbitWebSocketDao.TickerListen
  // OrderPanel 필드
     private java.util.concurrent.ScheduledExecutorService scheduler;
     
-    // 💡 가짜(mock) 데이터 삭제하고, DB에서 불러온 진짜 잔고를 담을 맵
+    // 가짜(mock) 데이터 삭제하고, DB에서 불러온 진짜 잔고를 담을 맵
     private Map<String, BigDecimal> realBalance = new HashMap<>();
     private Map<String, BigDecimal> realLocked = new HashMap<>();
     
@@ -39,7 +39,9 @@ public class OrderPanel extends JPanel implements UpbitWebSocketDao.TickerListen
     private OrderEditListPanel orderEditListPanel; 
 
     private String userId;
-    private long sessionId = 1L; // 💡 현재 세션 ID 필드 유지
+    private long getSessionId() {
+        return com.team.coin_simulator.backtest.SessionManager.getInstance().getCurrentSessionId();
+    }
     
     private String selectedCoinCode = "BTC"; 
     private BigDecimal currentSelectedPrice = BigDecimal.ZERO; 
@@ -50,7 +52,7 @@ public class OrderPanel extends JPanel implements UpbitWebSocketDao.TickerListen
     private final Color COLOR_BID = new Color(200, 30, 30);
     private final Color COLOR_ASK = new Color(30, 70, 200);
     
-    public OrderPanel(String userId) {
+    public OrderPanel(String userId, boolean isBacktesting) {
         this.userId = userId;
         
         setLayout(new BorderLayout());
@@ -88,7 +90,12 @@ public class OrderPanel extends JPanel implements UpbitWebSocketDao.TickerListen
 
         // 초기 데이터 로드 및 웹소켓 시작
         refreshDBData();
-        UpbitWebSocketDao.getInstance().addListener(this);
+        if (!isBacktesting) {
+            UpbitWebSocketDao.getInstance().addListener(this);
+            System.out.println(">> [모드] 실시간 거래 모드 활성화");
+        } else {
+            System.out.println(">> [모드] 백테스팅 모드 활성화");
+        }
     }
 
     private JPanel createTradePanel() {
@@ -174,8 +181,7 @@ public class OrderPanel extends JPanel implements UpbitWebSocketDao.TickerListen
     }
     
     // 💡 세션 변경 시 DB에서 잔고 및 미체결 주문 다시 불러오기
-    public void setSessionId(long sessionId) {
-        this.sessionId = sessionId;
+    public void setSessionId(long ignoredSessionId) {
         refreshDBData();
     }
     
@@ -198,17 +204,17 @@ public class OrderPanel extends JPanel implements UpbitWebSocketDao.TickerListen
         }, 0, 2, java.util.concurrent.TimeUnit.SECONDS); // 주기는 너 기존에 맞춰
     }
     
-    // 💡 [핵심] DB와 동기화하는 메서드 (가짜 데이터 대신 진짜 데이터를 읽어옴)
+    //DB와 동기화하는 메서드
     private void refreshDBData() {
         realBalance.clear();
         realLocked.clear();
         
         // 1. 진짜 잔고 불러오기
-        List<AssetDTO> assets = assetDAO.getAllAssets(this.userId, this.sessionId);
+List<AssetDTO> assets = assetDAO.getAllAssets(this.userId, getSessionId());
         
         System.out.println("\n[🔍 OrderPanel DB 조회 테스트]");
         System.out.println("▶ 조회 요청 ID: " + this.userId);
-        System.out.println("▶ 조회 요청 세션방: " + this.sessionId);
+        System.out.println("▶ 조회 요청 세션방: " + getSessionId()); // 🚀 [수정]
         System.out.println("▶ DB에서 가져온 자산 개수: " + assets.size() + "개");
         
         for (AssetDTO a : assets) {
@@ -218,8 +224,9 @@ public class OrderPanel extends JPanel implements UpbitWebSocketDao.TickerListen
         }
         System.out.println("-----------------------------------\n");
         
-        // 2. 이 세션의 미체결 주문 불러오기
-        openOrders = openOrderDAO.getOpenOrders(this.userId, this.sessionId);
+        // 🚀 [수정] this.sessionId -> getSessionId()
+        openOrders = openOrderDAO.getOpenOrders(this.userId, getSessionId());
+        
         orderCoinMap.clear();
         for (OrderDTO o : openOrders) {
             orderCoinMap.put(o.getOrderId(), o.getMarket().replace("KRW-", ""));
@@ -227,14 +234,13 @@ public class OrderPanel extends JPanel implements UpbitWebSocketDao.TickerListen
         
         SwingUtilities.invokeLater(() -> {
             updateInfoLabel();
-            // 💡 master가 만들어둔 외부 패널로 진짜 데이터 밀어넣기!
             if (orderEditListPanel != null) {
                 orderEditListPanel.updateData(openOrders, orderCoinMap, realBalance, realLocked);
             }
         });
     }
 
- // ✅ MainFrame이 호출할 종료 메서드
+ // MainFrame이 호출할 종료 메서드
     public void shutdown() {
         try {
             if (scheduler != null && !scheduler.isShutdown()) {
@@ -260,28 +266,37 @@ public class OrderPanel extends JPanel implements UpbitWebSocketDao.TickerListen
     }
 
     @Override
-    public void onTickerUpdate(String symbol, String priceStr, String flucStr, String accPriceStr) {
+    public void onTickerUpdate(String symbol, String priceStr, String flucStr, String accPriceStr, String tradeVolumeStr) {
         String cleanPrice = priceStr.replace(",", "").replace(" KRW", "").trim();
         if (cleanPrice.isEmpty() || cleanPrice.equals("연결중...")) return;
 
         BigDecimal currentPrice = new BigDecimal(cleanPrice);
         latestPrices.put(symbol, currentPrice);
 
-        // [master 장점] 💡 시세 업데이트 시 자동체결 엔진 구동 쓰레드
+        //시세 업데이트 시 자동체결 엔진 구동 쓰레드
         new Thread(() -> {
-            List<OrderDTO> executedList = orderDAO.checkAndExecuteLimitOrders(symbol, currentPrice);
-            if (executedList != null && !executedList.isEmpty()) {
-                for (OrderDTO order : executedList) {
-                    String typeStr = order.getSide().equals("BID") ? "매수" : "매도";
-                    String msg = String.format("[지정가 체결] %s %s 완료!\n(가격: %,.0f KRW, 수량: %s)", 
-                            symbol, typeStr, order.getOriginalPrice(), order.getOriginalVolume().toPlainString());
-                    
-                    SwingUtilities.invokeLater(() -> {
-                        JFrame parentFrame = (JFrame) SwingUtilities.getWindowAncestor(OrderPanel.this);
-                        if(parentFrame != null) com.team.coin_simulator.Alerts.NotificationUtil.showToast(parentFrame, msg);
-                        refreshDBData(); // 체결 성공 시 DB 새로고침!
-                    });
+            try {
+                BigDecimal realTradeVolume = new BigDecimal(tradeVolumeStr);
+
+                List<OrderDTO> executedList = orderDAO.checkAndExecuteLimitOrders(symbol, currentPrice, realTradeVolume, getSessionId());
+                
+                if (executedList != null && !executedList.isEmpty()) {
+                    for (OrderDTO order : executedList) {
+                        String typeStr = order.getSide().equals("BID") ? "매수" : "매도";
+                        
+                        // 부분 체결 알림
+                        String msg = String.format("[부분 체결] %s %s!\n(가격: %,.0f KRW, 체결량: %s)", 
+                                symbol, typeStr, order.getOriginalPrice(), order.getOriginalVolume().toPlainString());
+                        
+                        javax.swing.SwingUtilities.invokeLater(() -> {
+                            javax.swing.JFrame parentFrame = (javax.swing.JFrame) javax.swing.SwingUtilities.getWindowAncestor(OrderPanel.this);
+                            if(parentFrame != null) com.team.coin_simulator.Alerts.NotificationUtil.showToast(parentFrame, msg);
+                            refreshDBData(); 
+                        });
+                    }
                 }
+            } catch (Exception e) {
+                e.printStackTrace();
             }
         }).start();
 
@@ -290,7 +305,7 @@ public class OrderPanel extends JPanel implements UpbitWebSocketDao.TickerListen
         this.currentSelectedPrice = currentPrice;
         String krName = com.team.coin_simulator.CoinConfig.COIN_INFO.getOrDefault(symbol, symbol);
         
-        SwingUtilities.invokeLater(() -> {
+        javax.swing.SwingUtilities.invokeLater(() -> {
             lblSelectedCoinInfo.setText(krName + " - 현재가 " + String.format("%,.0f", currentSelectedPrice) + " KRW");
             if (isLimitMode && priceField.getText().isEmpty()) {
                 priceField.setText(cleanPrice); updateOrderSummary();
@@ -302,6 +317,7 @@ public class OrderPanel extends JPanel implements UpbitWebSocketDao.TickerListen
     private void updateInfoLabel() {
         String assetCode = (sideIdx == 0) ? "KRW" : selectedCoinCode; 
         BigDecimal balance = realBalance.getOrDefault(assetCode, BigDecimal.ZERO);
+        BigDecimal locked = realLocked.getOrDefault(assetCode, BigDecimal.ZERO);
         String format = assetCode.equals("KRW") ? "%,.0f" : "%.8f";
         valAvailable.setText(String.format(format + " %s", balance, assetCode));
     }
@@ -371,7 +387,7 @@ public class OrderPanel extends JPanel implements UpbitWebSocketDao.TickerListen
             OrderDTO order = new OrderDTO();
             order.setOrderId(System.currentTimeMillis());
             order.setUserId(this.userId); 
-            order.setSessionId(this.sessionId); 
+            order.setSessionId(getSessionId());
             order.setMarket("KRW-" + selectedCoinCode); 
             order.setSide(sideIdx == 0 ? "BID" : "ASK");
             order.setOriginalPrice(price);
@@ -398,7 +414,7 @@ public class OrderPanel extends JPanel implements UpbitWebSocketDao.TickerListen
                 OrderDTO marketOrder = new OrderDTO(); 
                 marketOrder.setOrderId(System.currentTimeMillis()); 
                 marketOrder.setUserId(this.userId); 
-                marketOrder.setSessionId(this.sessionId); 
+                marketOrder.setSessionId(getSessionId());
                 marketOrder.setMarket("KRW-" + selectedCoinCode); 
                 marketOrder.setSide("BID"); 
                 marketOrder.setStatus("DONE");
@@ -415,7 +431,7 @@ public class OrderPanel extends JPanel implements UpbitWebSocketDao.TickerListen
                 OrderDTO marketOrder = new OrderDTO(); 
                 marketOrder.setOrderId(System.currentTimeMillis()); 
                 marketOrder.setUserId(this.userId); 
-                marketOrder.setSessionId(this.sessionId); 
+                marketOrder.setSessionId(getSessionId());
                 marketOrder.setMarket("KRW-" + selectedCoinCode); 
                 marketOrder.setSide("ASK"); 
                 marketOrder.setStatus("DONE");
