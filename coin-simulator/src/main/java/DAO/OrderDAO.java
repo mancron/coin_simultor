@@ -255,7 +255,7 @@ public class OrderDAO {
                 }
             }
 
-            // 💡 [추가] 2. 정산 로직 가동!
+            //2. 정산 로직 가동!
             BigDecimal newAvgPrice = currentAvgPrice;
             BigDecimal realizedPnl = null;
             BigDecimal roi = null;
@@ -295,7 +295,7 @@ public class OrderDAO {
                 pstmt.setLong(1, order.getOrderId()); pstmt.setBigDecimal(2, tradePrice); pstmt.setBigDecimal(3, tradeVolume);      
                 pstmt.setBigDecimal(4, fee); pstmt.setString(5, order.getMarket()); pstmt.setString(6, order.getSide()); pstmt.setString(7, userId);               
                 pstmt.setBigDecimal(8, tradeTotalAmt);    
-                // 🚀 빈칸이었던 데이터 채우기!
+                //빈칸이었던 데이터 채우기
                 pstmt.setBigDecimal(9, newAvgPrice); 
                 pstmt.setObject(10, realizedPnl, Types.DECIMAL); // null 허용 삽입
                 pstmt.setObject(11, roi, Types.DECIMAL);         // null 허용 삽입
@@ -320,12 +320,23 @@ public class OrderDAO {
                     pstmt.executeUpdate();
                 }
             } else { // 매도
-                BigDecimal totalEarned = tradeTotalAmt.subtract(fee); 
-                // 코인 차감 (매도는 평단가 변동 없음)
+                BigDecimal totalEarned = tradeTotalAmt.subtract(fee);
+                
+                //남은 코인 수량 확인 후 평단가 세팅
+                BigDecimal remainingCoin = currentCoinBal.subtract(tradeVolume);
+                BigDecimal avgPriceToSave = (remainingCoin.compareTo(BigDecimal.ZERO) <= 0) 
+                        ? BigDecimal.ZERO 
+                        : currentAvgPrice;
+                
+                // 이제 결정된 평단가(0 또는 기존가)를 DB에 보냄
                 try (PreparedStatement pstmt = conn.prepareStatement(updateAssetSql)) {
-                    pstmt.setString(1, userId); pstmt.setLong(2, order.getSessionId()); pstmt.setString(3, symbol);
-                    pstmt.setBigDecimal(4, tradeVolume.negate()); pstmt.setBigDecimal(5, currentAvgPrice);
-                    pstmt.setBigDecimal(6, tradeVolume.negate()); pstmt.setBigDecimal(7, currentAvgPrice);
+                    pstmt.setString(1, userId); 
+                    pstmt.setLong(2, order.getSessionId()); 
+                    pstmt.setString(3, symbol);
+                    pstmt.setBigDecimal(4, tradeVolume.negate()); // balance = balance - 판매량
+                    pstmt.setBigDecimal(5, avgPriceToSave);       // INSERT 시 평단가
+                    pstmt.setBigDecimal(6, tradeVolume.negate()); // UPDATE 시 balance 차감
+                    pstmt.setBigDecimal(7, avgPriceToSave);
                     pstmt.executeUpdate();
                 }
                 // KRW 획득
@@ -401,7 +412,7 @@ public class OrderDAO {
         return executedList;
     }
 
-    // 💡 [핵심] 지정가 부분 체결 + 정산 로직
+    //지정가 부분 체결 + 정산 로직
     private BigDecimal processPartialExecution(Connection conn, OrderDTO order, List<OrderDTO> executedList, String market, String expectedSide, BigDecimal availableTradeVolume) throws SQLException {
         
         BigDecimal orderRemainingVol = order.getRemainingVolume();
@@ -486,6 +497,18 @@ public class OrderDAO {
                 dStmt.setBigDecimal(1, executeVol); dStmt.setString(2, order.getUserId()); dStmt.setLong(3, order.getSessionId()); dStmt.setString(4, coinSymbol); dStmt.setBigDecimal(5, executeVol);
                 dStmt.executeUpdate();
             }
+            
+            //전량 매도 여부 확인 후 평단가 초기화 (방어 코드)
+            String resetAvgSql = "UPDATE assets SET avg_buy_price = 0 " +
+                    "WHERE user_id = ? AND session_id = ? AND currency = ? " +
+                    "AND balance <= 0 AND locked <= 0";
+			try (PreparedStatement rStmt = conn.prepareStatement(resetAvgSql)) {
+			   rStmt.setString(1, order.getUserId());
+			   rStmt.setLong(2, order.getSessionId());
+			   rStmt.setString(3, coinSymbol);
+			   rStmt.executeUpdate();
+			}
+
             BigDecimal earnedKrw = totalExecutionCost.subtract(fee);
             String addKrwSql = "UPDATE assets SET balance = balance + ? WHERE user_id = ? AND session_id = ? AND currency = 'KRW'";
             try (PreparedStatement aStmt = conn.prepareStatement(addKrwSql)) {
