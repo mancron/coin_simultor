@@ -430,14 +430,14 @@ List<AssetDTO> assets = assetDAO.getAllAssets(this.userId, getSessionId());
         try {
             BigDecimal inputVal = new BigDecimal(marketAmountField.getText().replace(",", "").trim());
 
-            if (sideIdx == 0) { // 🔵 [시장가 매수]
+            if (sideIdx == 0) { //[시장가 매수]
                 BigDecimal krwBal = realBalance.getOrDefault("KRW", BigDecimal.ZERO);
                 
-                // 🚀 [수정] 수수료(0.05%)를 포함한 총 필요 금액 계산!
+                //수수료(0.05%)를 포함한 총 필요 금액 계산!
                 BigDecimal fee = inputVal.multiply(new BigDecimal("0.0005"));
                 BigDecimal totalRequired = inputVal.add(fee);
                 
-                // 🚀 [수정] 원금 + 수수료를 합친 금액보다 잔고가 적으면 차단!
+                //원금 + 수수료를 합친 금액보다 잔고가 적으면 차단!
                 if (krwBal.compareTo(totalRequired) < 0) {
                     throw new RuntimeException("KRW 잔고가 부족합니다. (수수료 포함)");
                 }
@@ -456,7 +456,7 @@ List<AssetDTO> assets = assetDAO.getAllAssets(this.userId, getSessionId());
                     refreshDBData(); // 💡 DB 동기화
                 } else throw new RuntimeException("DB 저장 실패");
                 
-            } else { // 🔴 [시장가 매도]
+            } else { //[시장가 매도]
                 BigDecimal coinBal = realBalance.getOrDefault(selectedCoinCode, BigDecimal.ZERO);
                 
                 // 매도는 코인 수량만 맞으면 됨 (수수료는 들어올 돈에서 깎이니까 문제없음!)
@@ -577,7 +577,7 @@ List<AssetDTO> assets = assetDAO.getAllAssets(this.userId, getSessionId());
         tf.setHorizontalAlignment(JTextField.RIGHT);
     }
 
-    // 💡 [master 장점] 퍼센트 버튼 패널
+    //퍼센트 버튼 패널
     private JPanel createPercentPanel() {
         JPanel p = new JPanel(new GridLayout(1, 5, 5, 0)); 
         p.setBackground(Color.WHITE);
@@ -601,7 +601,7 @@ List<AssetDTO> assets = assetDAO.getAllAssets(this.userId, getSessionId());
         return p;
     }
 
-    // 💡 [수정] 진짜 잔고(realBalance)를 사용해 퍼센트 자동 입력 기능 적용
+    //진짜 잔고(realBalance)를 사용해 퍼센트 자동 입력 기능 적용
     private void applyPercent(double fraction) {
         if (fraction == 0.0) { 
             if (isLimitMode) qtyField.setText("");
@@ -651,7 +651,7 @@ List<AssetDTO> assets = assetDAO.getAllAssets(this.userId, getSessionId());
         }
     }
     
-    // 💡 [master 장점] 가격 [+] [-] 버튼 조작
+    //가격 [+] [-] 버튼 조작
     private void adjustPrice(boolean isPlus) {
         try {
             String pStr = priceField.getText().replace(",", "").trim();
