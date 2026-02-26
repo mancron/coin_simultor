@@ -7,6 +7,7 @@ import java.awt.Cursor;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
+import java.math.BigDecimal;
 
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
@@ -78,6 +79,10 @@ public class MainFrame extends JFrame {
 
     // 알림 감시자
     private PriceAlertService alertService;
+    private JButton btnAlert;
+    
+    //자동 매매 엔진
+    private com.team.coin_simulator.Market_Order.AutoOrderService autoOrderService;
 
     // 백테스팅 UI / 어댑터
     private BacktestTimeControlPanel backtestControlPanel;
@@ -111,11 +116,13 @@ public class MainFrame extends JFrame {
         setSize(1600, 900);
         setLocationRelativeTo(null);
 
+        alertService = new PriceAlertService(this, this.currentUserId);
+        
+        autoOrderService = new com.team.coin_simulator.Market_Order.AutoOrderService(this, currentUserId, currentSessionId);
+        
         initComponents();
         initWebSocket(); // 앱 시작 시 항상 실시간 WebSocket 연결
-
-        alertService = new PriceAlertService(this);
-
+        
         setVisible(true);
         syncMarketDataBackground();
     }
@@ -228,6 +235,38 @@ public class MainFrame extends JFrame {
 
         btnProfile.addActionListener(e -> openProfile());
         buttonPanel.add(btnProfile);
+        
+        //가격 알림 설정 버튼
+        btnAlert = new JButton("알림 설정");
+        btnAlert.setFont(new Font("맑은 고딕", Font.BOLD, 13));
+        btnAlert.setForeground(Color.WHITE);
+        btnAlert.setBackground(new Color(243, 156, 18)); // 예쁜 오렌지색!
+        btnAlert.setFocusPainted(false);
+        btnAlert.setBorderPainted(false);
+        btnAlert.setPreferredSize(new Dimension(110, 35));
+        btnAlert.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+
+        // 마우스 올렸을 때 색상 변화 효과
+        btnAlert.addMouseListener(new java.awt.event.MouseAdapter() {
+            public void mouseEntered(java.awt.event.MouseEvent evt) { btnAlert.setBackground(new Color(230, 126, 34)); }
+            public void mouseExited(java.awt.event.MouseEvent evt)  { btnAlert.setBackground(new Color(243, 156, 18)); }
+        });
+
+        // 버튼 클릭 시 팝업창 띄우기 로직
+        btnAlert.addActionListener(e -> {
+            // 1. 코인 이름에 "KRW-" 붙여주기 (예: BTC -> KRW-BTC)
+            String market = "KRW-" + currentCoinSymbol; 
+            
+            // 2. OrderPanel에서 현재가 훔쳐오기 (없으면 0원)
+            BigDecimal currentPrice = (orderPanel != null) ? orderPanel.getCurrentSelectedPrice() : BigDecimal.ZERO;
+            
+            //AlertDialog 띄우기 (자신, 코인명, 현재가, 유저ID, 알림서비스)
+            new com.team.coin_simulator.Alerts.AlertDialog(
+                MainFrame.this, market, currentPrice, currentUserId, alertService
+            ).setVisible(true);
+        });
+
+        buttonPanel.add(btnAlert); // 패널에 버튼 장착
 
         panel.add(buttonPanel, BorderLayout.EAST);
         return panel;
@@ -314,6 +353,10 @@ public class MainFrame extends JFrame {
         if (backtestControlPanel != null) {
             backtestControlPanel.activateSessionUI(selectedSession);
         }
+        //백테스팅 진입 시 알림 버튼 숨기기
+        if (btnAlert != null) {
+            btnAlert.setVisible(false); // 버튼 화면에서 삭제
+        }
     }
 
     /**
@@ -351,6 +394,14 @@ public class MainFrame extends JFrame {
             }
             
             UpbitWebSocketDao.getInstance().start();
+            
+            if (alertService != null) {
+                DAO.UpbitWebSocketDao.getInstance().addListener(alertService);
+            }
+            //실시간 복귀 시 알림 버튼 복구
+            if (btnAlert != null) {
+                btnAlert.setVisible(true);
+            }
         });
     }
 
@@ -399,6 +450,13 @@ public class MainFrame extends JFrame {
 
         if (orderPanel != null) {
             orderPanel.setSelectedCoin(coinSymbol);
+        }
+        //알림 엔진 다시 연결
+        if (alertService != null) {
+            DAO.UpbitWebSocketDao.getInstance().addListener(alertService);
+        }
+        if (autoOrderService != null) {
+            DAO.UpbitWebSocketDao.getInstance().addListener(autoOrderService);
         }
     }
 
@@ -455,5 +513,9 @@ public class MainFrame extends JFrame {
         }
 
         SwingUtilities.invokeLater(() -> new MainFrame("test_user1"));
+    }
+    //OrderPanel에서 자동 매매 엔진을 가져갈 수 있게 해주는 메서드
+    public com.team.coin_simulator.Market_Order.AutoOrderService getAutoOrderService() {
+        return this.autoOrderService;
     }
 }
