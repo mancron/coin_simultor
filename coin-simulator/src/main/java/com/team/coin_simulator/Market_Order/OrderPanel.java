@@ -421,25 +421,30 @@ List<AssetDTO> assets = assetDAO.getAllAssets(this.userId, getSessionId());
 
             if (orderDAO.insertOrder(order)) {
                 JOptionPane.showMessageDialog(this, "지정가 주문 접수 완료");
-                refreshDBData(); // 💡 주문 접수 후 DB 새로고침
+                refreshDBData(); // 주문 접수 후 DB 새로고침
             } else throw new RuntimeException("데이터베이스 저장에 실패했습니다.");
         } catch (Exception e) { JOptionPane.showMessageDialog(this, "주문 오류: " + e.getMessage(), "알림", JOptionPane.ERROR_MESSAGE); }
     }
 
     private void handleMarketOrder() {
-        try {
-            BigDecimal inputVal = new BigDecimal(marketAmountField.getText().replace(",", "").trim());
+    	try {BigDecimal inputVal = new BigDecimal(marketAmountField.getText().replace(",", "").trim());
+            BigDecimal feeRate = new BigDecimal("0.0005");
 
             if (sideIdx == 0) { //[시장가 매수]
                 BigDecimal krwBal = realBalance.getOrDefault("KRW", BigDecimal.ZERO);
                 
-                //수수료(0.05%)를 포함한 총 필요 금액 계산!
-                BigDecimal fee = inputVal.multiply(new BigDecimal("0.0005"));
+                // 입력금액 + 수수료 계산
+                BigDecimal fee = inputVal.multiply(feeRate).setScale(0, RoundingMode.UP); // 수수료는 올림처리해서 안전하게 확보
                 BigDecimal totalRequired = inputVal.add(fee);
                 
                 //원금 + 수수료를 합친 금액보다 잔고가 적으면 차단!
                 if (krwBal.compareTo(totalRequired) < 0) {
-                    throw new RuntimeException("KRW 잔고가 부족합니다. (수수료 포함)");
+                    // 차이가 미미하다면(수수료 계산 오차), 잔고에 맞춰서 inputVal을 역계산
+                    if (totalRequired.subtract(krwBal).compareTo(new BigDecimal("10")) <= 0) {
+                        inputVal = krwBal.divide(BigDecimal.ONE.add(feeRate), 0, RoundingMode.DOWN);
+                    } else {
+                        throw new RuntimeException("KRW 잔고가 부족합니다. (필요: " + totalRequired + " / 잔고: " + krwBal + ")");
+                    }
                 }
                 
                 BigDecimal buyQty = OrderCalc.calculateMarketBuyQuantity(inputVal, currentSelectedPrice);
@@ -611,10 +616,16 @@ List<AssetDTO> assets = assetDAO.getAllAssets(this.userId, getSessionId());
         }
 
         try {
+            // 수수료율 설정 (0.05%)
+            BigDecimal feeRate = new BigDecimal("0.0005");
+            BigDecimal totalDivisor = BigDecimal.ONE.add(feeRate); // 1.0005
+
             if (isLimitMode) { // [지정가 모드]
-                if (sideIdx == 0) { // 매수 (KRW 기준 -> 수량 계산)
+                if (sideIdx == 0) { // 매수
                     BigDecimal availKrw = realBalance.getOrDefault("KRW", BigDecimal.ZERO);
-                    BigDecimal safeKrw = availKrw.divide(new BigDecimal("1.0005"), 8, RoundingMode.DOWN);
+                    // 전 재산을 1.0005로 나눠서 수수료 몫을 뺀 순수 구매 가능액 계산
+                    BigDecimal safeMaxKrw = availKrw.divide(totalDivisor, 0, RoundingMode.DOWN);
+                    BigDecimal targetKrw = safeMaxKrw.multiply(new BigDecimal(fraction)).setScale(0, RoundingMode.DOWN);
                     
                     String pStr = priceField.getText().replace(",", "").trim();
                     if (pStr.isEmpty()) { 
@@ -624,24 +635,26 @@ List<AssetDTO> assets = assetDAO.getAllAssets(this.userId, getSessionId());
                         } else return;
                     }
                     BigDecimal price = new BigDecimal(pStr);
-                    BigDecimal qty = OrderCalc.calcPercentLimitBuyQty(safeKrw, fraction, price);
+                    // 지정가 수량 = (수수료 제외한 가용금액 * 퍼센트) / 지정가
+                    BigDecimal qty = targetKrw.divide(price, 8, RoundingMode.DOWN);
                     qtyField.setText(qty.compareTo(BigDecimal.ZERO) == 0 ? "" : qty.toPlainString());
                     
-                } else { // 매도 (코인 기준 -> 수량 계산)
+                } else { // 매도
                     BigDecimal availCoin = realBalance.getOrDefault(selectedCoinCode, BigDecimal.ZERO);
-                    BigDecimal qty = OrderCalc.calcPercentSellQty(availCoin, fraction);
+                    BigDecimal qty = availCoin.multiply(new BigDecimal(fraction)).setScale(8, RoundingMode.DOWN);
                     qtyField.setText(qty.compareTo(BigDecimal.ZERO) == 0 ? "" : qty.toPlainString());
                 }
             } else { // [시장가 모드]
-                if (sideIdx == 0) { // 매수 (KRW 기준 -> 총액 계산)
+                if (sideIdx == 0) { // 시장가 매수
                     BigDecimal availKrw = realBalance.getOrDefault("KRW", BigDecimal.ZERO);
-                    BigDecimal amt = OrderCalc.calcPercentMarketBuyAmount(availKrw, fraction);
-                    marketAmountField.setText(amt.compareTo(BigDecimal.ZERO) == 0 ? "" : amt.toPlainString());
+                    //전 재산을 1.0005로 나누어 수수료가 포함된 총액이 잔고를 넘지 않게 세팅
+                    BigDecimal safeMaxKrw = availKrw.divide(totalDivisor, 0, RoundingMode.DOWN);
+                    BigDecimal targetAmt = safeMaxKrw.multiply(new BigDecimal(fraction)).setScale(0, RoundingMode.DOWN);
+                    marketAmountField.setText(targetAmt.compareTo(BigDecimal.ZERO) == 0 ? "" : targetAmt.toPlainString());
                     
-                } else { // 매도 (코인 기준 -> 수량 계산)
+                } else { // 시장가 매도 (코인 수량 기준)
                     BigDecimal availCoin = realBalance.getOrDefault(selectedCoinCode, BigDecimal.ZERO);
-                    BigDecimal safeKrw = availCoin.divide(new BigDecimal("1.0005"), 8, RoundingMode.DOWN);
-                    BigDecimal qty = OrderCalc.calcPercentSellQty(safeKrw, fraction);
+                    BigDecimal qty = availCoin.multiply(new BigDecimal(fraction)).setScale(8, RoundingMode.DOWN);
                     marketAmountField.setText(qty.compareTo(BigDecimal.ZERO) == 0 ? "" : qty.toPlainString());
                 }
             }
@@ -693,64 +706,94 @@ List<AssetDTO> assets = assetDAO.getAllAssets(this.userId, getSessionId());
         p.setBackground(Color.WHITE);
 
         // 상단 안내
-        JLabel lblTitle = new JLabel("특수 예약 주문 (Stop-Loss / Take-Profit)");
-        lblTitle.setFont(new Font("맑은 고딕", Font.BOLD, 14));
-        lblTitle.setAlignmentX(Component.CENTER_ALIGNMENT);
-        p.add(lblTitle);
-        p.add(Box.createVerticalStrut(20));
-        //현재 코인과 가격을 띄워줄 전용 라벨
         lblAutoCoinInfo = new JLabel("비트코인 (BTC)");
         lblAutoCoinInfo.setFont(new Font("맑은 고딕", Font.BOLD, 16));
-        lblAutoCoinInfo.setForeground(new Color(155, 89, 182)); // 보라색으로 깔맞춤
         lblAutoCoinInfo.setAlignmentX(Component.CENTER_ALIGNMENT);
         p.add(lblAutoCoinInfo);
         p.add(Box.createVerticalStrut(20));
 
-        // 폼 영역 (GridLayout)
-        JPanel formPanel = new JPanel(new GridLayout(4, 2, 5, 15));
+        // 가격 및 수량 필드
+        JPanel formPanel = new JPanel(new GridLayout(2, 2, 5, 15));
         formPanel.setBackground(Color.WHITE);
-        formPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 160));
+        formPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 80));
 
-        formPanel.add(new JLabel("목표 가격 (KRW):"));
-        JTextField tfTargetPrice = new JTextField(); styleField(tfTargetPrice);
+        formPanel.add(new JLabel("목표 가격 (KRW)"));
+        JTextField tfTargetPrice = new JTextField(); 
+        styleField(tfTargetPrice);
         formPanel.add(tfTargetPrice);
 
-        formPanel.add(new JLabel("주문 수량 (개):"));
-        JTextField tfVolume = new JTextField(); styleField(tfVolume);
+        formPanel.add(new JLabel("주문 수량 (개)"));
+        JTextField tfVolume = new JTextField(); 
+        styleField(tfVolume);
         formPanel.add(tfVolume);
 
-        formPanel.add(new JLabel("조건 및 방향:"));
-        JPanel comboPanel = new JPanel(new GridLayout(1, 2, 5, 0));
-        JComboBox<String> cbCondition = new JComboBox<>(new String[]{"이상 (돌파)", "이하 (이탈)"});
-        JComboBox<String> cbSide = new JComboBox<>(new String[]{"매도 (팔기)", "매수 (사기)"});
-        comboPanel.add(cbCondition); comboPanel.add(cbSide);
-        formPanel.add(comboPanel);
-
         p.add(formPanel);
+        p.add(Box.createVerticalStrut(25));
+
+        //조건
+        JLabel lblCond = new JLabel("조건 선택");
+        lblCond.setFont(new Font("맑은 고딕", Font.BOLD, 13));
+        lblCond.setAlignmentX(Component.LEFT_ALIGNMENT);
+        p.add(lblCond);
+        p.add(Box.createVerticalStrut(10));
+
+        String[] conditions = {"▲ 가격이 목표가 이상(ABOVE)일 때", "▼ 가격이 목표가 이하(BELOW)일 때"};
+        JComboBox<String> cbCondition = new JComboBox<>(conditions);
+        cbCondition.setMaximumSize(new Dimension(Integer.MAX_VALUE, 40));
+        p.add(cbCondition);
+        p.add(Box.createVerticalStrut(25));
+
+        //매수/매도 방향 선택 (세로형 리스트 스타일)
+        JLabel lblSide = new JLabel("주문 방향 선택");
+        lblSide.setFont(new Font("맑은 고딕", Font.BOLD, 13));
+        lblSide.setAlignmentX(Component.LEFT_ALIGNMENT);
+        p.add(lblSide);
+        p.add(Box.createVerticalStrut(10));
+
+        // 세로 리스트를 위해 라디오 버튼 활용 (가장 직관적임)
+        JRadioButton rbAsk = new JRadioButton("시장가 매도 (팔기)");
+        JRadioButton rbBid = new JRadioButton("시장가 매수 (사기)");
+        rbAsk.setBackground(Color.WHITE);
+        rbBid.setBackground(Color.WHITE);
+        rbAsk.setFont(new Font("맑은 고딕", Font.PLAIN, 14));
+        rbBid.setFont(new Font("맑은 고딕", Font.PLAIN, 14));
+        rbAsk.setSelected(true); // 기본값 매도
+
+        ButtonGroup group = new ButtonGroup();
+        group.add(rbAsk); group.add(rbBid);
+
+        JPanel sidePanel = new JPanel();
+        sidePanel.setLayout(new BoxLayout(sidePanel, BoxLayout.Y_AXIS));
+        sidePanel.setBackground(Color.WHITE);
+        sidePanel.add(rbAsk);
+        sidePanel.add(Box.createVerticalStrut(10));
+        sidePanel.add(rbBid);
+        sidePanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        p.add(sidePanel);
+
         p.add(Box.createVerticalGlue());
 
-        // 하단 예약 버튼
+        //예약 주문 버튼
         JButton btnSubmit = new JButton("특수 주문 예약하기");
-        btnSubmit.setFont(new Font("맑은 고딕", Font.BOLD, 16));
+        btnSubmit.setFont(new Font("맑은 고딕", Font.BOLD, 18));
         btnSubmit.setBackground(new Color(155, 89, 182)); // 보라색
         btnSubmit.setForeground(Color.WHITE);
         btnSubmit.setFocusPainted(false);
         btnSubmit.setOpaque(true);
         btnSubmit.setBorderPainted(false);
-        btnSubmit.setMaximumSize(new Dimension(Integer.MAX_VALUE, 50));
+        btnSubmit.setMaximumSize(new Dimension(Integer.MAX_VALUE, 55));
         btnSubmit.setAlignmentX(Component.CENTER_ALIGNMENT);
 
         btnSubmit.addActionListener(e -> {
             try {
                 BigDecimal target = new BigDecimal(tfTargetPrice.getText().replace(",", "").trim());
                 BigDecimal vol = new BigDecimal(tfVolume.getText().replace(",", "").trim());
-
                 if (vol.compareTo(BigDecimal.ZERO) <= 0) {
                     JOptionPane.showMessageDialog(this, "수량은 0보다 커야 합니다."); return;
                 }
 
                 String cond = cbCondition.getSelectedIndex() == 0 ? "ABOVE" : "BELOW";
-                String side = cbSide.getSelectedIndex() == 0 ? "ASK" : "BID";
+                String side = rbAsk.isSelected() ? "ASK" : "BID"; // 라디오 버튼 상태 체크
 
                 DAO.AutoOrderDAO autoOrderDAO = new DAO.AutoOrderDAO();
                 DTO.AutoOrderDTO dto = new DTO.AutoOrderDTO();
@@ -763,19 +806,16 @@ List<AssetDTO> assets = assetDAO.getAllAssets(this.userId, getSessionId());
                 dto.setSide(side);
 
                 if (autoOrderDAO.insertAutoOrder(dto)) {
-                    JOptionPane.showMessageDialog(this, "특수 주문 예약 완료!\n목표가 도달 시 시장가로 체결됩니다.");
+                    JOptionPane.showMessageDialog(this, "특수 주문이 예약되었습니다!");
                     tfTargetPrice.setText(""); tfVolume.setText("");
                     
-                    // MainFrame의 엔진 갱신
                     com.team.coin_simulator.MainFrame mainFrame = (com.team.coin_simulator.MainFrame) SwingUtilities.getWindowAncestor(this);
                     if (mainFrame != null && mainFrame.getAutoOrderService() != null) {
                         mainFrame.getAutoOrderService().reloadAutoOrdersFromDB();
                     }
-                } else {
-                    JOptionPane.showMessageDialog(this, "예약 실패 (DB 오류)");
                 }
             } catch (Exception ex) {
-                JOptionPane.showMessageDialog(this, "가격과 수량을 숫자로 정확히 입력해주세요.");
+                JOptionPane.showMessageDialog(this, "가격을 정확히 입력해주세요.");
             }
         });
 

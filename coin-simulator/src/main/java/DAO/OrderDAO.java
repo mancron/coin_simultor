@@ -115,19 +115,24 @@ public class OrderDAO {
             }
 
             String currency = side.equals("BID") ? "KRW" : market.replace("KRW-", "");
+            
+            // 🚀 [핵심 수술 지점] 파라미터로 넘어온 amount의 미세한 소수점 먼지를 버림(DOWN) 처리!
+            BigDecimal safeAmount = amount.setScale(8, java.math.RoundingMode.DOWN);
+
             String refundAssetSql = "UPDATE assets SET balance = balance + ?, locked = locked - ? " +
                                     "WHERE user_id = ? AND session_id = ? AND currency = ? AND locked >= ?";
 
             try (PreparedStatement pstmt = conn.prepareStatement(refundAssetSql)) {
-                pstmt.setBigDecimal(1, amount);
-                pstmt.setBigDecimal(2, amount);
+                // 💡 amount 대신 먼지를 털어낸 safeAmount를 넣어줍니다!
+                pstmt.setBigDecimal(1, safeAmount);
+                pstmt.setBigDecimal(2, safeAmount);
                 pstmt.setString(3, userId);
                 pstmt.setLong(4, sessionId);
                 pstmt.setString(5, currency);
-                pstmt.setBigDecimal(6, amount); 
+                pstmt.setBigDecimal(6, safeAmount); 
 
                 if (pstmt.executeUpdate() == 0) {
-                    throw new SQLException("자산 복구에 실패했습니다. (금고에 돈이 부족함)");
+                    throw new SQLException("자산 복구에 실패했습니다. (금고 부족 / 요청액: " + safeAmount + ")");
                 }
             }
 
@@ -216,14 +221,14 @@ public class OrderDAO {
         String insertOrderSql = "INSERT INTO orders (order_id, user_id, session_id, market, side, type, original_price, original_volume, remaining_volume, status) " +
                                 "VALUES (?, ?, ?, ?, ?, 'MARKET', ?, ?, ?, 'DONE')";
         
-        // 🚀 [수정] 평단가, 손익, 수익률 컬럼 추가!
+        //평단가, 손익, 수익률 컬럼 추가!
         String insertExecSql = "INSERT INTO executions (order_id, price, volume, fee, market, side, user_id, total_price, buy_avg_price, realized_pnl, roi) " +
                                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"; 
         
-        // 🚀 [수정] 평단가도 함께 업데이트되도록 변경!
-        String updateAssetSql = "INSERT INTO assets (user_id, session_id, currency, balance, locked, buy_avg_price) VALUES (?, ?, ?, ?, 0, ?) " +
-                                "ON DUPLICATE KEY UPDATE balance = balance + ?, buy_avg_price = ?";
-
+        //평단가도 함께 업데이트되도록 변경!
+        String updateAssetSql = "INSERT INTO assets (user_id, session_id, currency, balance, locked, avg_buy_price) VALUES (?, ?, ?, ?, 0, ?) " +
+                "ON DUPLICATE KEY UPDATE balance = balance + ?, avg_buy_price = ?";
+        
         Connection conn = null;
         try {
             conn = DBConnection.getConnection();
@@ -232,10 +237,10 @@ public class OrderDAO {
             BigDecimal fee = tradeTotalAmt.multiply(FEE_RATE);
             String symbol = order.getMarket().replace("KRW-", ""); 
 
-            // 💡 [추가] 1. 기존 평단가 및 잔고 조회 (정산 계산을 위함)
+            //1. 기존 평단가 및 잔고 조회 (정산 계산을 위함)
             BigDecimal currentCoinBal = BigDecimal.ZERO;
             BigDecimal currentAvgPrice = BigDecimal.ZERO;
-            String fetchAssetSql = "SELECT balance, buy_avg_price FROM assets WHERE user_id = ? AND session_id = ? AND currency = ?";
+            String fetchAssetSql = "SELECT balance, avg_buy_price FROM assets WHERE user_id = ? AND session_id = ? AND currency = ?";
             try (PreparedStatement pstmt = conn.prepareStatement(fetchAssetSql)) {
                 pstmt.setString(1, userId);
                 pstmt.setLong(2, order.getSessionId());
@@ -243,8 +248,8 @@ public class OrderDAO {
                 try (ResultSet rs = pstmt.executeQuery()) {
                     if (rs.next()) {
                         currentCoinBal = rs.getBigDecimal("balance");
-                        if (rs.getBigDecimal("buy_avg_price") != null) {
-                            currentAvgPrice = rs.getBigDecimal("buy_avg_price");
+                        if (rs.getBigDecimal("avg_buy_price") != null) {
+                            currentAvgPrice = rs.getBigDecimal("avg_buy_price"); // 🚀 [수정]
                         }
                     }
                 }
@@ -301,7 +306,7 @@ public class OrderDAO {
             if (order.getSide().equals("BID")) { // 매수
                 BigDecimal totalDeduct = tradeTotalAmt.add(fee);
                 // KRW 차감
-                String deductKrwSql = "INSERT INTO assets (user_id, session_id, currency, balance, locked, buy_avg_price) VALUES (?, ?, ?, ?, 0, 0) ON DUPLICATE KEY UPDATE balance = balance + ?";
+                String deductKrwSql = "INSERT INTO assets (user_id, session_id, currency, balance, locked, avg_buy_price) VALUES (?, ?, ?, ?, 0, 0) ON DUPLICATE KEY UPDATE balance = balance + ?";
                 try (PreparedStatement pstmt = conn.prepareStatement(deductKrwSql)) {
                     pstmt.setString(1, userId); pstmt.setLong(2, order.getSessionId()); pstmt.setString(3, "KRW");
                     pstmt.setBigDecimal(4, totalDeduct.negate()); pstmt.setBigDecimal(5, totalDeduct.negate());
@@ -324,7 +329,7 @@ public class OrderDAO {
                     pstmt.executeUpdate();
                 }
                 // KRW 획득
-                String addKrwSql = "INSERT INTO assets (user_id, session_id, currency, balance, locked, buy_avg_price) VALUES (?, ?, ?, ?, 0, 0) ON DUPLICATE KEY UPDATE balance = balance + ?";
+                String addKrwSql = "INSERT INTO assets (user_id, session_id, currency, balance, locked, avg_buy_price) VALUES (?, ?, ?, ?, 0, 0) ON DUPLICATE KEY UPDATE balance = balance + ?";
                 try (PreparedStatement pstmt = conn.prepareStatement(addKrwSql)) {
                     pstmt.setString(1, userId); pstmt.setLong(2, order.getSessionId()); pstmt.setString(3, "KRW");
                     pstmt.setBigDecimal(4, totalEarned); pstmt.setBigDecimal(5, totalEarned);
@@ -422,10 +427,10 @@ public class OrderDAO {
         BigDecimal fee = totalExecutionCost.multiply(FEE_RATE);
         String coinSymbol = market.replace("KRW-", ""); 
 
-        // 💡 [추가] 1. 기존 평단가 및 잔고 조회
+        //1. 기존 평단가 및 잔고 조회
         BigDecimal currentCoinBal = BigDecimal.ZERO;
         BigDecimal currentAvgPrice = BigDecimal.ZERO;
-        String fetchAssetSql = "SELECT balance, buy_avg_price FROM assets WHERE user_id = ? AND session_id = ? AND currency = ?";
+        String fetchAssetSql = "SELECT balance, avg_buy_price FROM assets WHERE user_id = ? AND session_id = ? AND currency = ?";
         try (PreparedStatement pstmt = conn.prepareStatement(fetchAssetSql)) {
             pstmt.setString(1, order.getUserId());
             pstmt.setLong(2, order.getSessionId());
@@ -433,12 +438,12 @@ public class OrderDAO {
             try (ResultSet rs = pstmt.executeQuery()) {
                 if (rs.next()) {
                     currentCoinBal = rs.getBigDecimal("balance");
-                    if (rs.getBigDecimal("buy_avg_price") != null) currentAvgPrice = rs.getBigDecimal("buy_avg_price");
+                    if (rs.getBigDecimal("avg_buy_price") != null) currentAvgPrice = rs.getBigDecimal("avg_buy_price"); // 🚀 [수정]
                 }
             }
         }
 
-        // 💡 [추가] 2. 정산 로직 가동!
+        //2. 정산 로직 가동!
         BigDecimal newAvgPrice = currentAvgPrice;
         BigDecimal realizedPnl = null;
         BigDecimal roi = null;
@@ -458,9 +463,9 @@ public class OrderDAO {
                 dStmt.setBigDecimal(1, deductAmt); dStmt.setString(2, order.getUserId()); dStmt.setLong(3, order.getSessionId()); dStmt.setBigDecimal(4, deductAmt);
                 dStmt.executeUpdate();
             }
-            // 🚀 코인 추가 시 평단가 반영
-            String addCoinSql = "INSERT INTO assets (user_id, session_id, currency, balance, locked, buy_avg_price) VALUES (?, ?, ?, ?, 0, ?) " +
-                                "ON DUPLICATE KEY UPDATE balance = balance + ?, buy_avg_price = ?";
+            //코인 추가 시 평단가 반영
+            String addCoinSql = "INSERT INTO assets (user_id, session_id, currency, balance, locked, avg_buy_price) VALUES (?, ?, ?, ?, 0, ?) " +
+                                "ON DUPLICATE KEY UPDATE balance = balance + ?, avg_buy_price = ?";
             try (PreparedStatement aStmt = conn.prepareStatement(addCoinSql)) {
                 aStmt.setString(1, order.getUserId()); aStmt.setLong(2, order.getSessionId()); aStmt.setString(3, coinSymbol); 
                 aStmt.setBigDecimal(4, executeVol); aStmt.setBigDecimal(5, newAvgPrice); 
