@@ -79,6 +79,7 @@ public class MainFrame extends JFrame {
 
     // 알림 감시자
     private PriceAlertService alertService;
+    private JButton btnAlert;
 
     // 백테스팅 UI / 어댑터
     private BacktestTimeControlPanel backtestControlPanel;
@@ -231,7 +232,7 @@ public class MainFrame extends JFrame {
         buttonPanel.add(btnProfile);
         
         //가격 알림 설정 버튼
-        JButton btnAlert = new JButton("알림 설정");
+        btnAlert = new JButton("알림 설정");
         btnAlert.setFont(new Font("맑은 고딕", Font.BOLD, 13));
         btnAlert.setForeground(Color.WHITE);
         btnAlert.setBackground(new Color(243, 156, 18)); // 예쁜 오렌지색!
@@ -347,6 +348,10 @@ public class MainFrame extends JFrame {
         if (backtestControlPanel != null) {
             backtestControlPanel.activateSessionUI(selectedSession);
         }
+        //백테스팅 진입 시 알림 버튼 숨기기
+        if (btnAlert != null) {
+            btnAlert.setVisible(false); // 버튼 화면에서 삭제
+        }
     }
 
     /**
@@ -387,6 +392,10 @@ public class MainFrame extends JFrame {
             
             if (alertService != null) {
                 DAO.UpbitWebSocketDao.getInstance().addListener(alertService);
+            }
+            //실시간 복귀 시 알림 버튼 복구
+            if (btnAlert != null) {
+                btnAlert.setVisible(true);
             }
         });
     }
