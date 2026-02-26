@@ -427,19 +427,24 @@ List<AssetDTO> assets = assetDAO.getAllAssets(this.userId, getSessionId());
     }
 
     private void handleMarketOrder() {
-        try {
-            BigDecimal inputVal = new BigDecimal(marketAmountField.getText().replace(",", "").trim());
+    	try {BigDecimal inputVal = new BigDecimal(marketAmountField.getText().replace(",", "").trim());
+            BigDecimal feeRate = new BigDecimal("0.0005");
 
             if (sideIdx == 0) { //[시장가 매수]
                 BigDecimal krwBal = realBalance.getOrDefault("KRW", BigDecimal.ZERO);
                 
-                //수수료(0.05%)를 포함한 총 필요 금액 계산!
-                BigDecimal fee = inputVal.multiply(new BigDecimal("0.0005"));
+                // 입력금액 + 수수료 계산
+                BigDecimal fee = inputVal.multiply(feeRate).setScale(0, RoundingMode.UP); // 수수료는 올림처리해서 안전하게 확보
                 BigDecimal totalRequired = inputVal.add(fee);
                 
                 //원금 + 수수료를 합친 금액보다 잔고가 적으면 차단!
                 if (krwBal.compareTo(totalRequired) < 0) {
-                    throw new RuntimeException("KRW 잔고가 부족합니다. (수수료 포함)");
+                    // 차이가 미미하다면(수수료 계산 오차), 잔고에 맞춰서 inputVal을 역계산
+                    if (totalRequired.subtract(krwBal).compareTo(new BigDecimal("10")) <= 0) {
+                        inputVal = krwBal.divide(BigDecimal.ONE.add(feeRate), 0, RoundingMode.DOWN);
+                    } else {
+                        throw new RuntimeException("KRW 잔고가 부족합니다. (필요: " + totalRequired + " / 잔고: " + krwBal + ")");
+                    }
                 }
                 
                 BigDecimal buyQty = OrderCalc.calculateMarketBuyQuantity(inputVal, currentSelectedPrice);
@@ -611,10 +616,16 @@ List<AssetDTO> assets = assetDAO.getAllAssets(this.userId, getSessionId());
         }
 
         try {
+            // 수수료율 설정 (0.05%)
+            BigDecimal feeRate = new BigDecimal("0.0005");
+            BigDecimal totalDivisor = BigDecimal.ONE.add(feeRate); // 1.0005
+
             if (isLimitMode) { // [지정가 모드]
-                if (sideIdx == 0) { // 매수 (KRW 기준 -> 수량 계산)
+                if (sideIdx == 0) { // 매수
                     BigDecimal availKrw = realBalance.getOrDefault("KRW", BigDecimal.ZERO);
-                    BigDecimal safeKrw = availKrw.divide(new BigDecimal("1.0005"), 8, RoundingMode.DOWN);
+                    // 전 재산을 1.0005로 나눠서 수수료 몫을 뺀 순수 구매 가능액 계산
+                    BigDecimal safeMaxKrw = availKrw.divide(totalDivisor, 0, RoundingMode.DOWN);
+                    BigDecimal targetKrw = safeMaxKrw.multiply(new BigDecimal(fraction)).setScale(0, RoundingMode.DOWN);
                     
                     String pStr = priceField.getText().replace(",", "").trim();
                     if (pStr.isEmpty()) { 
@@ -624,24 +635,26 @@ List<AssetDTO> assets = assetDAO.getAllAssets(this.userId, getSessionId());
                         } else return;
                     }
                     BigDecimal price = new BigDecimal(pStr);
-                    BigDecimal qty = OrderCalc.calcPercentLimitBuyQty(safeKrw, fraction, price);
+                    // 지정가 수량 = (수수료 제외한 가용금액 * 퍼센트) / 지정가
+                    BigDecimal qty = targetKrw.divide(price, 8, RoundingMode.DOWN);
                     qtyField.setText(qty.compareTo(BigDecimal.ZERO) == 0 ? "" : qty.toPlainString());
                     
-                } else { // 매도 (코인 기준 -> 수량 계산)
+                } else { // 매도
                     BigDecimal availCoin = realBalance.getOrDefault(selectedCoinCode, BigDecimal.ZERO);
-                    BigDecimal qty = OrderCalc.calcPercentSellQty(availCoin, fraction);
+                    BigDecimal qty = availCoin.multiply(new BigDecimal(fraction)).setScale(8, RoundingMode.DOWN);
                     qtyField.setText(qty.compareTo(BigDecimal.ZERO) == 0 ? "" : qty.toPlainString());
                 }
             } else { // [시장가 모드]
-                if (sideIdx == 0) { // 매수 (KRW 기준 -> 총액 계산)
+                if (sideIdx == 0) { // 시장가 매수
                     BigDecimal availKrw = realBalance.getOrDefault("KRW", BigDecimal.ZERO);
-                    BigDecimal amt = OrderCalc.calcPercentMarketBuyAmount(availKrw, fraction);
-                    marketAmountField.setText(amt.compareTo(BigDecimal.ZERO) == 0 ? "" : amt.toPlainString());
+                    //전 재산을 1.0005로 나누어 수수료가 포함된 총액이 잔고를 넘지 않게 세팅
+                    BigDecimal safeMaxKrw = availKrw.divide(totalDivisor, 0, RoundingMode.DOWN);
+                    BigDecimal targetAmt = safeMaxKrw.multiply(new BigDecimal(fraction)).setScale(0, RoundingMode.DOWN);
+                    marketAmountField.setText(targetAmt.compareTo(BigDecimal.ZERO) == 0 ? "" : targetAmt.toPlainString());
                     
-                } else { // 매도 (코인 기준 -> 수량 계산)
+                } else { // 시장가 매도 (코인 수량 기준)
                     BigDecimal availCoin = realBalance.getOrDefault(selectedCoinCode, BigDecimal.ZERO);
-                    BigDecimal safeKrw = availCoin.divide(new BigDecimal("1.0005"), 8, RoundingMode.DOWN);
-                    BigDecimal qty = OrderCalc.calcPercentSellQty(safeKrw, fraction);
+                    BigDecimal qty = availCoin.multiply(new BigDecimal(fraction)).setScale(8, RoundingMode.DOWN);
                     marketAmountField.setText(qty.compareTo(BigDecimal.ZERO) == 0 ? "" : qty.toPlainString());
                 }
             }
