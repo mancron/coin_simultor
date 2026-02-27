@@ -80,25 +80,30 @@ public class ProfitLoss_DetailTablePanel extends JPanel {
         headerRenderer.setBackground(new Color(248, 248, 248));
         headerRenderer.setForeground(Color.GRAY);
         headerRenderer.setFont(new Font("맑은 고딕", Font.PLAIN, 11));
-        headerRenderer.setBorder(new MatteBorder(0, 0, 1, 0, new Color(220, 220, 220)));
+        
+        // 전체 좌측 정렬 및 좌측 여백 추가
+        headerRenderer.setHorizontalAlignment(SwingConstants.LEFT);
+        headerRenderer.setBorder(BorderFactory.createCompoundBorder(
+                new MatteBorder(0, 0, 1, 0, new Color(220, 220, 220)),
+                BorderFactory.createEmptyBorder(0, 12, 0, 0)));
 
         for (int i = 0; i < COLUMNS.length; i++) {
-            headerRenderer.setHorizontalAlignment(i == 0 ? SwingConstants.CENTER : SwingConstants.RIGHT);
             table.getColumnModel().getColumn(i).setHeaderRenderer(headerRenderer);
         }
     }
 
     private void styleColumns() {
-        table.getColumnModel().getColumn(0).setCellRenderer(buildCenterRenderer());
+        DefaultTableCellRenderer leftRenderer = buildLeftRenderer();
         
-        table.getColumnModel().getColumn(1).setCellRenderer(buildColorRenderer(true));
-        table.getColumnModel().getColumn(3).setCellRenderer(buildColorRenderer(true));
-        table.getColumnModel().getColumn(2).setCellRenderer(buildColorRenderer(false));
-        table.getColumnModel().getColumn(4).setCellRenderer(buildColorRenderer(false));
+        table.getColumnModel().getColumn(0).setCellRenderer(leftRenderer);
+        
+        table.getColumnModel().getColumn(1).setCellRenderer(buildColorRenderer());
+        table.getColumnModel().getColumn(3).setCellRenderer(buildColorRenderer());
+        table.getColumnModel().getColumn(2).setCellRenderer(buildColorRenderer());
+        table.getColumnModel().getColumn(4).setCellRenderer(buildColorRenderer());
 
-        DefaultTableCellRenderer rightRenderer = buildRightRenderer();
         for (int i = 5; i <= 6; i++) {
-            table.getColumnModel().getColumn(i).setCellRenderer(rightRenderer);
+            table.getColumnModel().getColumn(i).setCellRenderer(leftRenderer);
         }
 
         int[] widths = {60, 100, 90, 100, 90, 110, 110}; 
@@ -109,27 +114,20 @@ public class ProfitLoss_DetailTablePanel extends JPanel {
         }
     }
 
-    private DefaultTableCellRenderer buildCenterRenderer() {
+    private DefaultTableCellRenderer buildLeftRenderer() {
         DefaultTableCellRenderer r = new DefaultTableCellRenderer();
-        r.setHorizontalAlignment(SwingConstants.CENTER);
+        r.setHorizontalAlignment(SwingConstants.LEFT); // 좌측 정렬
         r.setFont(new Font("맑은 고딕", Font.PLAIN, 12));
+        r.setBorder(BorderFactory.createEmptyBorder(0, 12, 0, 0)); // 좌측 여백
         return r;
     }
 
-    private DefaultTableCellRenderer buildRightRenderer() {
-        DefaultTableCellRenderer r = new DefaultTableCellRenderer();
-        r.setHorizontalAlignment(SwingConstants.RIGHT);
-        r.setFont(new Font("맑은 고딕", Font.PLAIN, 12));
-        r.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 12));
-        return r;
-    }
-
-    private DefaultTableCellRenderer buildColorRenderer(boolean isKrw) {
+    private DefaultTableCellRenderer buildColorRenderer() {
         return new DefaultTableCellRenderer() {
             {
-                setHorizontalAlignment(SwingConstants.RIGHT);
+                setHorizontalAlignment(SwingConstants.LEFT); // 좌측 정렬
                 setFont(new Font("맑은 고딕", Font.PLAIN, 12));
-                setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 12));
+                setBorder(BorderFactory.createEmptyBorder(0, 12, 0, 0)); // 좌측 여백
             }
 
             @Override
@@ -164,9 +162,6 @@ public class ProfitLoss_DetailTablePanel extends JPanel {
         Map<Date, BigDecimal> dailyPnlMap = new TreeMap<>(Collections.reverseOrder());
         
         for (ExecutionDTO exec : executions) {
-            if (!"ASK".equals(exec.getSide())) continue;
-            if (exec.getRealizedPnl() == null) continue;
-            
             Date date = new Date(exec.getExecutedAt().getTime());
             Calendar cal = Calendar.getInstance();
             cal.setTime(date);
@@ -176,7 +171,19 @@ public class ProfitLoss_DetailTablePanel extends JPanel {
             cal.set(Calendar.MILLISECOND, 0);
             Date dateOnly = cal.getTime();
             
-            dailyPnlMap.merge(dateOnly, exec.getRealizedPnl(), BigDecimal::add);
+            BigDecimal netPnl = BigDecimal.ZERO;
+            
+            // 1. 매도인 경우 실현 손익 추가
+            if ("ASK".equals(exec.getSide()) && exec.getRealizedPnl() != null) {
+                netPnl = netPnl.add(exec.getRealizedPnl());
+            }
+            
+            // 2. 수수료 차감 (매수, 매도 모두 적용)
+            if (exec.getFee() != null) {
+                netPnl = netPnl.subtract(exec.getFee());
+            }
+            
+            dailyPnlMap.merge(dateOnly, netPnl, BigDecimal::add);
         }
 
         // 테이블 행 생성
@@ -202,13 +209,13 @@ public class ProfitLoss_DetailTablePanel extends JPanel {
                 : 0.0;
 
             // 포맷팅
-            String dpStr = (dailyPnl.longValue() >= 0 ? "+" : "") + 
+            String dpStr = (dailyPnl.longValue() > 0 ? "+" : "") + 
                           String.format("%,d", dailyPnl.longValue());
-            String dyStr = (dailyYield >= 0 ? "+" : "") + 
+            String dyStr = (dailyYield > 0 ? "+" : "") + 
                           String.format("%.2f%%", dailyYield);
-            String cpStr = (cumulativePnl.longValue() >= 0 ? "+" : "") + 
+            String cpStr = (cumulativePnl.longValue() > 0 ? "+" : "") + 
                           String.format("%,d", cumulativePnl.longValue());
-            String cyStr = (cumulativeYield >= 0 ? "+" : "") + 
+            String cyStr = (cumulativeYield > 0 ? "+" : "") + 
                           String.format("%.2f%%", cumulativeYield);
 
             tableModel.addRow(new Object[]{

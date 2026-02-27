@@ -95,25 +95,22 @@ public class ProfitLoss_Chart_YieldLineChart extends JPanel {
     }
 
     /**
-     * ExecutionDTO 리스트로 누적 수익률 차트 업데이트
+     * ExecutionDTO 리스트로 누적 수익률 차트 업데이트 (세션 ID 추가)
      */
-    public void updateData(List<ExecutionDTO> executions, String userId) {
+    public void updateData(List<ExecutionDTO> executions, String userId, long sessionId) {
         series.clear();
         if (executions == null || executions.isEmpty()) return;
 
-        // 초기 자본금 조회
-        long initialSeedMoney = dao.getInitialSeedMoney(userId);
-        if (initialSeedMoney <= 0) initialSeedMoney = 100000000L;
+        // 초기 자본금 조회 (세션 기준 적용)
+        long initialSeedMoney = dao.getInitialSeedMoney(userId, sessionId);
+        if (initialSeedMoney <= 0) initialSeedMoney = 100_000_000L;
 
         // 날짜별로 그룹화하여 손익 합산
         Map<Date, BigDecimal> dailyPnlMap = new TreeMap<>();
-        
+
         for (ExecutionDTO exec : executions) {
-            if (!"ASK".equals(exec.getSide())) continue;
-            if (exec.getRealizedPnl() == null) continue;
-            
+            // 날짜 절사 (시간, 분, 초 제거)
             Date date = new Date(exec.getExecutedAt().getTime());
-            // 날짜만 비교 (시간 제거)
             Calendar cal = Calendar.getInstance();
             cal.setTime(date);
             cal.set(Calendar.HOUR_OF_DAY, 0);
@@ -122,7 +119,19 @@ public class ProfitLoss_Chart_YieldLineChart extends JPanel {
             cal.set(Calendar.MILLISECOND, 0);
             Date dateOnly = cal.getTime();
             
-            dailyPnlMap.merge(dateOnly, exec.getRealizedPnl(), BigDecimal::add);
+            BigDecimal netPnl = BigDecimal.ZERO;
+            
+            // 1. 매도(ASK) 시 실현 손익 추가
+            if ("ASK".equals(exec.getSide()) && exec.getRealizedPnl() != null) {
+                netPnl = netPnl.add(exec.getRealizedPnl());
+            }
+            
+            // 2. 수수료(fee) 차감 (매수/매도 공통)
+            if (exec.getFee() != null) {
+                netPnl = netPnl.subtract(exec.getFee());
+            }
+            
+            dailyPnlMap.merge(dateOnly, netPnl, BigDecimal::add);
         }
 
         // 누적 손익 계산 및 차트 추가

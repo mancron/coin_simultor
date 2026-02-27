@@ -101,30 +101,36 @@ public class ProfitLoss_MainPanel extends JPanel {
         refreshAll();
     }
 
-    // ── UI 갱신 ───────────────────────────────────────────────────
+ // ── UI 갱신 ───────────────────────────────────────────────────
 
     private void refreshAll() {
-        // 초기 자본금 — 세션 기준 조회
-        long initialSeedMoney = dao.getInitialSeedMoney(userId, sessionId); // sessionId 적용
+        // 초기 자본금
+        long initialSeedMoney = dao.getInitialSeedMoney(userId, sessionId); 
 
         if (currentExecutions == null || currentExecutions.isEmpty()) {
-            summaryPanel.updateSummary(0, 0.0, initialSeedMoney);
-            chartAreaPanel.updateCharts(currentExecutions, userId);
+            summaryPanel.updateSummary(0, 0.0, initialSeedMoney, 0); // 수수료 파라미터 추가
+            chartAreaPanel.updateCharts(currentExecutions, userId,sessionId);
             tablePanel.updateTable(currentExecutions, userId);
             return;
         }
 
-        // 총 실현 손익 — 세션 기준 조회
-        long totalPnl = dao.getTotalRealizedPnl(userId, sessionId).longValue(); // sessionId 적용
+        // 총 실현 손익 및 총 수수료 조회
+        long totalPnl = dao.getTotalRealizedPnl(userId, sessionId).longValue(); 
+        long totalFee = dao.getTotalFee(userId, sessionId).longValue(); // 신규 로직
+        
+        // 순손익 도출
+        long netPnl = totalPnl - totalFee;
 
+        // 순손익 기반 수익률 계산
         double totalYield = initialSeedMoney > 0
-            ? ((double) totalPnl / initialSeedMoney) * 100
+            ? ((double) netPnl / initialSeedMoney) * 100
             : 0.0;
 
-        long avgInvestment = initialSeedMoney + (totalPnl / 2);
+        long avgInvestment = initialSeedMoney + (netPnl / 2);
 
-        summaryPanel.updateSummary(totalPnl, totalYield, avgInvestment);
-        chartAreaPanel.updateCharts(currentExecutions, userId);
+        // UI 갱신
+        summaryPanel.updateSummary(netPnl, totalYield, avgInvestment, totalFee);
+        chartAreaPanel.updateCharts(currentExecutions, userId,sessionId);
         tablePanel.updateTable(currentExecutions, userId);
 
         revalidate();

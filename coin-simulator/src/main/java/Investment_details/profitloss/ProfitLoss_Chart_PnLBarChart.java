@@ -111,11 +111,20 @@ public class ProfitLoss_Chart_PnLBarChart extends JPanel {
         SimpleDateFormat sdf = new SimpleDateFormat("MM.dd");
         
         for (ExecutionDTO exec : executions) {
-            if (!"ASK".equals(exec.getSide())) continue; // 매도만 집계
-            if (exec.getRealizedPnl() == null) continue;
+            BigDecimal netPnl = BigDecimal.ZERO;
+            
+            // 1. 매도(ASK) 시 실현 손익 추가
+            if ("ASK".equals(exec.getSide()) && exec.getRealizedPnl() != null) {
+                netPnl = netPnl.add(exec.getRealizedPnl());
+            }
+            
+            // 2. 수수료(fee) 차감 (매수, 매도 공통)
+            if (exec.getFee() != null) {
+                netPnl = netPnl.subtract(exec.getFee());
+            }
             
             String dateKey = sdf.format(exec.getExecutedAt());
-            dailyPnlMap.merge(dateKey, exec.getRealizedPnl(), BigDecimal::add);
+            dailyPnlMap.merge(dateKey, netPnl, BigDecimal::add);
         }
 
         // 차트에 데이터 추가
