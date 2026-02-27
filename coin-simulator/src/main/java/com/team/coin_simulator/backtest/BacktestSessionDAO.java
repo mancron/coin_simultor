@@ -154,16 +154,16 @@ public class BacktestSessionDAO {
         }
     }
 
-    // ──────────────────────────────────────────────
+ // ──────────────────────────────────────────────
     //  DB에 백테스팅 데이터가 존재하는 최소/최대 날짜 조회
     // ──────────────────────────────────────────────
 
     /**
-     * DB의 market_candle 에서 가장 오래된 데이터 시각을 반환합니다.
+     * DB의 market_candle 에서 1분봉(unit=1) 기준 가장 오래된 데이터 시각을 반환합니다.
      * (세션 시작 가능 하한선 계산용)
      */
     public LocalDateTime getEarliestCandleTime() {
-        String sql = "SELECT MIN(candle_date_time_kst) FROM market_candle";
+        String sql = "SELECT MIN(candle_date_time_kst) FROM market_candle WHERE unit = 1";
         try (Connection conn = DBConnection.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql);
              ResultSet rs = ps.executeQuery()) {
@@ -173,7 +173,7 @@ public class BacktestSessionDAO {
         } catch (SQLException e) {
             e.printStackTrace();
         }
-        return LocalDateTime.now().minusMonths(6); // 기본값 fallback
+        return null; // 1분봉 데이터가 아예 없는 경우 null 반환
     }
 
     // ──────────────────────────────────────────────
