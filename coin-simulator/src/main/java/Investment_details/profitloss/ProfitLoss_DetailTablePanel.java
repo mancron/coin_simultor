@@ -11,6 +11,7 @@ import DAO.ProfitLossDAO;
 
 import java.awt.*;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.List;
@@ -158,8 +159,8 @@ public class ProfitLoss_DetailTablePanel extends JPanel {
         // 초기 자본금 조회
         long initialSeedMoney = dao.getInitialSeedMoney(userId);
 
-        // 날짜별로 그룹화
-        Map<Date, BigDecimal> dailyPnlMap = new TreeMap<>(Collections.reverseOrder());
+        // [수정] 정방향 누적 계산을 위해 오름차순 정렬 (TreeMap 기본 설정)
+        Map<Date, BigDecimal> dailyPnlMap = new TreeMap<>();
         
         for (ExecutionDTO exec : executions) {
             Date date = new Date(exec.getExecutedAt().getTime());
@@ -186,39 +187,46 @@ public class ProfitLoss_DetailTablePanel extends JPanel {
             dailyPnlMap.merge(dateOnly, netPnl, BigDecimal::add);
         }
 
-        // 테이블 행 생성
         BigDecimal cumulativePnl = BigDecimal.ZERO;
         long currentAsset = initialSeedMoney;
 
+        // 과거부터 최신순으로 누적 합산 진행
         for (Map.Entry<Date, BigDecimal> entry : dailyPnlMap.entrySet()) {
             String dateStr = sdf.format(entry.getKey());
             BigDecimal dailyPnl = entry.getValue();
             
+            // [수정] 소수점 버림으로 인한 오차 방지를 위해 반올림 후 long 캐스팅
+            long dailyPnlRounded = dailyPnl.setScale(0, RoundingMode.HALF_UP).longValue();
+            
             long baseAsset = currentAsset; // 기초자산
+            
             cumulativePnl = cumulativePnl.add(dailyPnl);
-            currentAsset = initialSeedMoney + cumulativePnl.longValue(); // 기말자산
+            long cumulativePnlRounded = cumulativePnl.setScale(0, RoundingMode.HALF_UP).longValue();
+            
+            currentAsset = initialSeedMoney + cumulativePnlRounded; // 기말자산
 
-            // 일일 수익률
+            // 일일 수익률 (기초 자산 기준)
             double dailyYield = baseAsset > 0 
-                ? (dailyPnl.doubleValue() / baseAsset) * 100 
+                ? ((double) dailyPnlRounded / baseAsset) * 100 
                 : 0.0;
 
-            // 누적 수익률
+            // 누적 수익률 (초기 자본금 기준)
             double cumulativeYield = initialSeedMoney > 0
-                ? (cumulativePnl.doubleValue() / initialSeedMoney) * 100
+                ? ((double) cumulativePnlRounded / initialSeedMoney) * 100
                 : 0.0;
 
             // 포맷팅
-            String dpStr = (dailyPnl.longValue() > 0 ? "+" : "") + 
-                          String.format("%,d", dailyPnl.longValue());
+            String dpStr = (dailyPnlRounded > 0 ? "+" : "") + 
+                          String.format("%,d", dailyPnlRounded);
             String dyStr = (dailyYield > 0 ? "+" : "") + 
                           String.format("%.2f%%", dailyYield);
-            String cpStr = (cumulativePnl.longValue() > 0 ? "+" : "") + 
-                          String.format("%,d", cumulativePnl.longValue());
+            String cpStr = (cumulativePnlRounded > 0 ? "+" : "") + 
+                          String.format("%,d", cumulativePnlRounded);
             String cyStr = (cumulativeYield > 0 ? "+" : "") + 
                           String.format("%.2f%%", cumulativeYield);
 
-            tableModel.addRow(new Object[]{
+            // [수정] UI상 최신 날짜가 위로 올라오도록 0번째 행(최상단)에 삽입
+            tableModel.insertRow(0, new Object[]{
                     dateStr,
                     dpStr,
                     dyStr,
