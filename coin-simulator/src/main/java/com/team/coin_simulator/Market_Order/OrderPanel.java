@@ -353,11 +353,28 @@ List<AssetDTO> assets = assetDAO.getAllAssets(this.userId, getSessionId());
 
     private void handleLimitOrder() {
         try {
-            BigDecimal price = new BigDecimal(priceField.getText().replace(",", "").trim());
+            BigDecimal limitPrice = new BigDecimal(priceField.getText().replace(",", "").trim());
             BigDecimal qty = new BigDecimal(qtyField.getText().replace(",", "").trim());
+            
+            // 테이커(Taker) 주문 시 "가격 개선"만 적용하고 호가창에 올림
+            if (currentSelectedPrice.compareTo(BigDecimal.ZERO) > 0) {
+                if (sideIdx == 0 && limitPrice.compareTo(currentSelectedPrice) > 0) {
+                    // 매수
+                    limitPrice = currentSelectedPrice;
+                    com.team.coin_simulator.Alerts.NotificationUtil.showToast((JFrame) SwingUtilities.getWindowAncestor(this),
+                        "현재가(" + currentSelectedPrice + " KRW)가 더 유리하여 해당 가격으로 매수 대기합니다.");
+                } else if (sideIdx == 1 && limitPrice.compareTo(currentSelectedPrice) < 0) {
+                    // 매도
+                    limitPrice = currentSelectedPrice;
+                    com.team.coin_simulator.Alerts.NotificationUtil.showToast((JFrame) SwingUtilities.getWindowAncestor(this),
+                        "현재가(" + currentSelectedPrice + " KRW)가 더 유리하여 해당 가격으로 매도 대기합니다.");
+                }
+            }
+
+            // --- 기존 지정가 메이커(Maker) 주문 (호가창 대기) 로직 ---
             BigDecimal requiredAmount;
             if (sideIdx == 0) { // 매수
-                BigDecimal cost = price.multiply(qty);
+                BigDecimal cost = limitPrice.multiply(qty);
                 BigDecimal fee = cost.multiply(new BigDecimal("0.0005"));
                 requiredAmount = cost.add(fee);
             } else { // 매도
@@ -366,9 +383,8 @@ List<AssetDTO> assets = assetDAO.getAllAssets(this.userId, getSessionId());
             
             String currency = (sideIdx == 0) ? "KRW" : selectedCoinCode;
             
-            //진짜 잔고로 결제 여부 검사
+            // 진짜 잔고로 결제 여부 검사
             BigDecimal balance = realBalance.getOrDefault(currency, BigDecimal.ZERO);
-
             if (balance.compareTo(requiredAmount) < 0) {
                 throw new RuntimeException("주문 가능 잔고가 부족합니다.");
             }
@@ -379,17 +395,27 @@ List<AssetDTO> assets = assetDAO.getAllAssets(this.userId, getSessionId());
             order.setSessionId(getSessionId());
             order.setMarket("KRW-" + selectedCoinCode); 
             order.setSide(sideIdx == 0 ? "BID" : "ASK");
-            order.setOriginalPrice(price);
+
+            order.setOriginalPrice(limitPrice); 
             order.setOriginalVolume(qty);
             order.setRemainingVolume(qty);
-            order.setStatus("WAIT");
+
+            order.setStatus("WAIT"); 
 
             if (orderDAO.insertOrder(order)) {
-                JOptionPane.showMessageDialog(this, "지정가 주문 접수 완료");
-                refreshDBData(); // 주문 접수 후 DB 새로고침
-                triggerMainFrameRefresh();
+                // 토스트 알림이 떴을 테니 기본 팝업은 없애거나 유지하셔도 좋습니다.
+                refreshDBData(); 
+                triggerMainFrameRefresh(); 
+                
+                // 입력창 비우기
+                priceField.setText("");
+                qtyField.setText("");
+                updateOrderSummary();
             } else throw new RuntimeException("데이터베이스 저장에 실패했습니다.");
-        } catch (Exception e) { JOptionPane.showMessageDialog(this, "주문 오류: " + e.getMessage(), "알림", JOptionPane.ERROR_MESSAGE); }
+            
+        } catch (Exception e) { 
+            JOptionPane.showMessageDialog(this, "주문 오류: " + e.getMessage(), "알림", JOptionPane.ERROR_MESSAGE); 
+        }
     }
 
     private void handleMarketOrder() {
@@ -424,7 +450,7 @@ List<AssetDTO> assets = assetDAO.getAllAssets(this.userId, getSessionId());
                 
                 if (orderDAO.executeMarketOrder(marketOrder, this.userId, currentSelectedPrice, buyQty, inputVal)) {
                     com.team.coin_simulator.Alerts.NotificationUtil.showToast((JFrame) SwingUtilities.getWindowAncestor(this), String.format("[체결] %s 시장가 매수 완료 (%.8f개)", selectedCoinCode, buyQty));
-                    refreshDBData(); // 💡 DB 동기화
+                    refreshDBData(); // DB 동기화
                     triggerMainFrameRefresh();
                 } else throw new RuntimeException("DB 저장 실패");
                 

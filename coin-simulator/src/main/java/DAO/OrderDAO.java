@@ -385,7 +385,7 @@ public class OrderDAO {
                 try (ResultSet rs = bidPstmt.executeQuery()) {
                     while (rs.next() && availableVolumeForBid.compareTo(BigDecimal.ZERO) > 0) {
                         OrderDTO order = mapResultSetToOrderDTO(rs);
-                        availableVolumeForBid = processPartialExecution(conn, order, executedList, market, "BID", availableVolumeForBid);
+                        availableVolumeForBid = processPartialExecution(conn, order, executedList, market, "BID", availableVolumeForBid, currentRealPrice);
                     }
                 }
             }
@@ -397,7 +397,7 @@ public class OrderDAO {
                 try (ResultSet rs = askPstmt.executeQuery()) {
                     while (rs.next() && availableVolumeForAsk.compareTo(BigDecimal.ZERO) > 0) {
                         OrderDTO order = mapResultSetToOrderDTO(rs);
-                        availableVolumeForAsk = processPartialExecution(conn, order, executedList, market, "ASK", availableVolumeForAsk);
+                        availableVolumeForAsk = processPartialExecution(conn, order, executedList, market, "ASK", availableVolumeForAsk, currentRealPrice);
                     }
                 }
             }
@@ -413,7 +413,8 @@ public class OrderDAO {
     }
 
     //지정가 부분 체결 + 정산 로직
-    private BigDecimal processPartialExecution(Connection conn, OrderDTO order, List<OrderDTO> executedList, String market, String expectedSide, BigDecimal availableTradeVolume) throws SQLException {
+ // 🚀 지정가 부분 체결 + 유리한 가격(Price Improvement) + 환불 정산 로직
+    private BigDecimal processPartialExecution(Connection conn, OrderDTO order, List<OrderDTO> executedList, String market, String expectedSide, BigDecimal availableTradeVolume, BigDecimal currentRealPrice) throws SQLException {
         
         BigDecimal orderRemainingVol = order.getRemainingVolume();
         BigDecimal executeVol = orderRemainingVol.min(availableTradeVolume);
@@ -432,13 +433,28 @@ public class OrderDAO {
             updateStmt.setBigDecimal(4, executeVol); 
             if (updateStmt.executeUpdate() == 0) return availableTradeVolume; 
         }
+        
+        //더 유리한 시장가로 체결 가격(executionPrice) 바꿔치기!
+        BigDecimal limitPrice = order.getOriginalPrice(); 
+        BigDecimal executionPrice = limitPrice; // 기본값은 지정가
 
-        BigDecimal executionPrice = order.getOriginalPrice(); // 지정가 체결은 본인이 걸어둔 가격(original_price)에 체결됨
+        if ("BID".equals(expectedSide)) {
+            // 매수: 지정가보다 시장가가 더 싸면 싼 가격으로!
+            if (currentRealPrice.compareTo(limitPrice) < 0) {
+                executionPrice = currentRealPrice;
+            }
+        } else {
+            // 매도: 지정가보다 시장가가 더 비싸면 비싼 가격으로!
+            if (currentRealPrice.compareTo(limitPrice) > 0) {
+                executionPrice = currentRealPrice;
+            }
+        }
+
         BigDecimal totalExecutionCost = executionPrice.multiply(executeVol);
         BigDecimal fee = totalExecutionCost.multiply(FEE_RATE);
         String coinSymbol = market.replace("KRW-", ""); 
 
-        //1. 기존 평단가 및 잔고 조회
+        // 1. 기존 평단가 및 잔고 조회
         BigDecimal currentCoinBal = BigDecimal.ZERO;
         BigDecimal currentAvgPrice = BigDecimal.ZERO;
         String fetchAssetSql = "SELECT balance, avg_buy_price FROM assets WHERE user_id = ? AND session_id = ? AND currency = ?";
@@ -449,12 +465,12 @@ public class OrderDAO {
             try (ResultSet rs = pstmt.executeQuery()) {
                 if (rs.next()) {
                     currentCoinBal = rs.getBigDecimal("balance");
-                    if (rs.getBigDecimal("avg_buy_price") != null) currentAvgPrice = rs.getBigDecimal("avg_buy_price"); // 🚀 [수정]
+                    if (rs.getBigDecimal("avg_buy_price") != null) currentAvgPrice = rs.getBigDecimal("avg_buy_price");
                 }
             }
         }
 
-        //2. 정산 로직 가동!
+        // 2. 정산 로직 가동!
         BigDecimal newAvgPrice = currentAvgPrice;
         BigDecimal realizedPnl = null;
         BigDecimal roi = null;
@@ -468,13 +484,26 @@ public class OrderDAO {
                 newAvgPrice = oldTotalValue.add(newTotalValue).divide(newTotalBal, 8, RoundingMode.HALF_UP);
             }
 
-            BigDecimal deductAmt = totalExecutionCost.add(fee);
-            String deductLockedSql = "UPDATE assets SET locked = locked - ? WHERE user_id = ? AND session_id = ? AND currency = 'KRW' AND locked >= ?";
+            //매수 시 거스름돈 환불 처리
+            BigDecimal originalCost = limitPrice.multiply(executeVol);
+            BigDecimal originalFee = originalCost.multiply(FEE_RATE);
+            BigDecimal lockedAmtToRelease = originalCost.add(originalFee); // 원래 비싸게 묶어둔 돈
+            
+            BigDecimal actualDeductAmt = totalExecutionCost.add(fee); // 실제 싼 가격으로 산 돈
+            BigDecimal refundAmt = lockedAmtToRelease.subtract(actualDeductAmt); // 개이득 본 거스름돈!
+
+            // 금고(locked)에서는 묶어둔 돈을 빼고, 거스름돈(refundAmt)은 잔고(balance)에 더해준다.
+            String deductLockedSql = "UPDATE assets SET locked = locked - ?, balance = balance + ? WHERE user_id = ? AND session_id = ? AND currency = 'KRW' AND locked >= ?";
             try (PreparedStatement dStmt = conn.prepareStatement(deductLockedSql)) {
-                dStmt.setBigDecimal(1, deductAmt); dStmt.setString(2, order.getUserId()); dStmt.setLong(3, order.getSessionId()); dStmt.setBigDecimal(4, deductAmt);
+                dStmt.setBigDecimal(1, lockedAmtToRelease);
+                dStmt.setBigDecimal(2, refundAmt);
+                dStmt.setString(3, order.getUserId()); 
+                dStmt.setLong(4, order.getSessionId()); 
+                dStmt.setBigDecimal(5, lockedAmtToRelease);
                 dStmt.executeUpdate();
             }
-            //코인 추가 시 평단가 반영
+            
+            // 코인 추가 시 평단가 반영
             String addCoinSql = "INSERT INTO assets (user_id, session_id, currency, balance, locked, avg_buy_price) VALUES (?, ?, ?, ?, 0, ?) " +
                                 "ON DUPLICATE KEY UPDATE balance = balance + ?, avg_buy_price = ?";
             try (PreparedStatement aStmt = conn.prepareStatement(addCoinSql)) {
@@ -491,23 +520,19 @@ public class OrderDAO {
                 realizedPnl = BigDecimal.ZERO; roi = BigDecimal.ZERO;
             }
 
-            // 코인 차감 (매도는 평단가 유지)
+            // 코인 차감 (매도는 평단가 유지. 코인은 거스름돈 개념이 없음)
             String deductLockedSql = "UPDATE assets SET locked = locked - ? WHERE user_id = ? AND session_id = ? AND currency = ? AND locked >= ?";
             try (PreparedStatement dStmt = conn.prepareStatement(deductLockedSql)) {
                 dStmt.setBigDecimal(1, executeVol); dStmt.setString(2, order.getUserId()); dStmt.setLong(3, order.getSessionId()); dStmt.setString(4, coinSymbol); dStmt.setBigDecimal(5, executeVol);
                 dStmt.executeUpdate();
             }
             
-            //전량 매도 여부 확인 후 평단가 초기화 (방어 코드)
-            String resetAvgSql = "UPDATE assets SET avg_buy_price = 0 " +
-                    "WHERE user_id = ? AND session_id = ? AND currency = ? " +
-                    "AND balance <= 0 AND locked <= 0";
-			try (PreparedStatement rStmt = conn.prepareStatement(resetAvgSql)) {
-			   rStmt.setString(1, order.getUserId());
-			   rStmt.setLong(2, order.getSessionId());
-			   rStmt.setString(3, coinSymbol);
-			   rStmt.executeUpdate();
-			}
+            // 전량 매도 여부 확인 후 평단가 초기화 (방어 코드)
+            String resetAvgSql = "UPDATE assets SET avg_buy_price = 0 WHERE user_id = ? AND session_id = ? AND currency = ? AND balance <= 0 AND locked <= 0";
+            try (PreparedStatement rStmt = conn.prepareStatement(resetAvgSql)) {
+               rStmt.setString(1, order.getUserId()); rStmt.setLong(2, order.getSessionId()); rStmt.setString(3, coinSymbol);
+               rStmt.executeUpdate();
+            }
 
             BigDecimal earnedKrw = totalExecutionCost.subtract(fee);
             String addKrwSql = "UPDATE assets SET balance = balance + ? WHERE user_id = ? AND session_id = ? AND currency = 'KRW'";
@@ -521,7 +546,8 @@ public class OrderDAO {
         String insertExecSql = "INSERT INTO executions (order_id, user_id, market, side, price, volume, total_price, fee, buy_avg_price, realized_pnl, roi) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         try (PreparedStatement insertExec = conn.prepareStatement(insertExecSql)) {
             insertExec.setLong(1, order.getOrderId()); insertExec.setString(2, order.getUserId()); insertExec.setString(3, market); insertExec.setString(4, expectedSide);
-            insertExec.setBigDecimal(5, executionPrice); insertExec.setBigDecimal(6, executeVol); insertExec.setBigDecimal(7, totalExecutionCost);
+            insertExec.setBigDecimal(5, executionPrice); // 실제 꿀 체결가 기록
+            insertExec.setBigDecimal(6, executeVol); insertExec.setBigDecimal(7, totalExecutionCost);
             insertExec.setBigDecimal(8, fee);
             insertExec.setBigDecimal(9, newAvgPrice); 
             insertExec.setObject(10, realizedPnl, Types.DECIMAL); 
@@ -532,7 +558,7 @@ public class OrderDAO {
         OrderDTO partialExecOrder = new OrderDTO();
         partialExecOrder.setOrderId(order.getOrderId());
         partialExecOrder.setSide(expectedSide);
-        partialExecOrder.setOriginalPrice(executionPrice);
+        partialExecOrder.setOriginalPrice(executionPrice); // 팝업창에도 바뀐 가격을 띄워줌
         partialExecOrder.setOriginalVolume(executeVol); 
         executedList.add(partialExecOrder);
 
