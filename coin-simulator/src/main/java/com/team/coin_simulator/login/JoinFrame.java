@@ -8,8 +8,11 @@ import javax.swing.*;
 import javax.swing.border.LineBorder;
 import javax.swing.border.TitledBorder;
 
+import com.team.coin_simulator.backtest.BacktestSessionDAO;
+
 import DAO.AssetDAO;
 import DAO.UserDAO;
+import DTO.SessionDTO;
 import DTO.UserDTO;
 
 public class JoinFrame extends JFrame {
@@ -141,42 +144,78 @@ public class JoinFrame extends JFrame {
                     return;
                 }
 
-                // 5) 이메일 중복 확인 및 가입
+                // 5) 이메일 중복 확인
                 if (userDAO.isIdDuplicate(email)) {
                     JOptionPane.showMessageDialog(JoinFrame.this, "이미 사용 중인 이메일 주소입니다.", "중복 오류", JOptionPane.WARNING_MESSAGE);
                     return;
                 }
 
+                // ✅ 회원가입 프로세스 시작
                 UserDTO user = new UserDTO();
                 user.setUserId(email);
                 user.setPassword(pw);
                 user.setNickname(email.split("@")[0]);
 
+                // 6) users 테이블에 회원 등록
                 boolean userCreated = userDAO.insertUser(user, phone);
 
-                if (userCreated) {
-                    boolean assetCreated = AssetDAO.createInitialAsset(email, 1L, initialAsset);
+                if (!userCreated) {
+                    JOptionPane.showMessageDialog(JoinFrame.this,
+                            "서버 오류로 가입에 실패했습니다. 잠시 후 다시 시도해주세요.",
+                            "DB 오류", JOptionPane.ERROR_MESSAGE);
+                    return;
+                }
+
+                // ✅ 7) 실시간 세션 생성
+                try {
+                    BacktestSessionDAO sessionDAO = new BacktestSessionDAO();
+                    SessionDTO realtimeSession = sessionDAO.getOrCreateRealtimeSession(email);
+
+                    if (realtimeSession == null) {
+                        JOptionPane.showMessageDialog(JoinFrame.this,
+                                "회원가입은 완료되었으나 실시간 세션 생성에 실패했습니다.\n로그인 후 다시 시도해주세요.",
+                                "경고", JOptionPane.WARNING_MESSAGE);
+                        new LoginFrame();
+                        dispose();
+                        return;
+                    }
+
+                    System.out.println("[JoinFrame] 실시간 세션 생성 완료: session_id=" + realtimeSession.getSessionId());
+
+                    // ✅ 8) 실시간 세션의 ID로 초기 자산 생성
+                    boolean assetCreated = AssetDAO.createInitialAsset(
+                            email, 
+                            realtimeSession.getSessionId(), 
+                            initialAsset
+                    );
 
                     if (assetCreated) {
                         JOptionPane.showMessageDialog(JoinFrame.this,
                                 "회원가입이 정상적으로 완료되었습니다!\n" +
-                                        "초기 투자금액: " + String.format("%,d", initialAsset.longValue()) + "원\n" +
-                                        "로그인 화면으로 이동합니다.",
+                                "초기 투자금액: " + String.format("%,d", initialAsset.longValue()) + "원\n" +
+                                "로그인 화면으로 이동합니다.",
                                 "가입 완료", JOptionPane.INFORMATION_MESSAGE);
                         new LoginFrame();
                         dispose();
                     } else {
                         JOptionPane.showMessageDialog(JoinFrame.this,
                                 "회원가입은 완료되었으나 초기 자산 설정에 실패했습니다.\n" +
-                                        "관리자에게 문의하거나 로그인 후 자산을 확인해주세요.",
+                                "관리자에게 문의하거나 로그인 후 자산을 확인해주세요.",
                                 "경고", JOptionPane.WARNING_MESSAGE);
                         new LoginFrame();
                         dispose();
                     }
-                } else {
+
+                } catch (Exception ex) {
+                    System.err.println("[JoinFrame] 세션 또는 자산 생성 중 오류 발생: " + ex.getMessage());
+                    ex.printStackTrace();
+                    
                     JOptionPane.showMessageDialog(JoinFrame.this,
-                            "서버 오류로 가입에 실패했습니다. 잠시 후 다시 시도해주세요.",
-                            "DB 오류", JOptionPane.ERROR_MESSAGE);
+                            "회원가입은 완료되었으나 초기 설정 중 오류가 발생했습니다.\n" +
+                            "로그인 후 자산을 확인해주세요.",
+                            "오류", JOptionPane.WARNING_MESSAGE);
+                    new LoginFrame();
+                    dispose();
                 }
             }
         });
