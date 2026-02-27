@@ -86,12 +86,12 @@ public class ProfitLoss_MainPanel extends JPanel {
 
     /**
      * 최근 N일간 체결 데이터를 DB에서 조회하여 화면에 표시
-     * [핵심] sessionId를 DAO에 전달하여 해당 세션의 데이터만 조회
+     * [수정] getSellExecutions -> getExecutions 로 변경하여 매수(수수료 포함) 내역까지 로드
      *
      * @param days 조회할 일수
      */
     public void loadRecentData(int days) {
-        this.currentExecutions = dao.getSellExecutions(userId, sessionId, days); // sessionId 적용
+        this.currentExecutions = dao.getExecutions(userId, sessionId, days); 
         refreshAll();
     }
 
@@ -104,27 +104,33 @@ public class ProfitLoss_MainPanel extends JPanel {
     // ── UI 갱신 ───────────────────────────────────────────────────
 
     private void refreshAll() {
-        // 초기 자본금 — 세션 기준 조회
-        long initialSeedMoney = dao.getInitialSeedMoney(userId, sessionId); // sessionId 적용
+        // 초기 자본금
+        long initialSeedMoney = dao.getInitialSeedMoney(userId, sessionId); 
 
         if (currentExecutions == null || currentExecutions.isEmpty()) {
-            summaryPanel.updateSummary(0, 0.0, initialSeedMoney);
-            chartAreaPanel.updateCharts(currentExecutions, userId);
+            summaryPanel.updateSummary(0, 0.0, initialSeedMoney, 0); 
+            chartAreaPanel.updateCharts(currentExecutions, userId, sessionId);
             tablePanel.updateTable(currentExecutions, userId);
             return;
         }
 
-        // 총 실현 손익 — 세션 기준 조회
-        long totalPnl = dao.getTotalRealizedPnl(userId, sessionId).longValue(); // sessionId 적용
+        // 총 실현 손익 및 총 수수료 조회
+        long totalPnl = dao.getTotalRealizedPnl(userId, sessionId).longValue(); 
+        long totalFee = dao.getTotalFee(userId, sessionId).longValue(); 
+        
+        // 순손익 도출
+        long netPnl = totalPnl - totalFee;
 
+        // 순손익 기반 수익률 계산
         double totalYield = initialSeedMoney > 0
-            ? ((double) totalPnl / initialSeedMoney) * 100
+            ? ((double) netPnl / initialSeedMoney) * 100
             : 0.0;
 
-        long avgInvestment = initialSeedMoney + (totalPnl / 2);
+        long avgInvestment = initialSeedMoney + (netPnl / 2);
 
-        summaryPanel.updateSummary(totalPnl, totalYield, avgInvestment);
-        chartAreaPanel.updateCharts(currentExecutions, userId);
+        // UI 갱신
+        summaryPanel.updateSummary(netPnl, totalYield, avgInvestment, totalFee);
+        chartAreaPanel.updateCharts(currentExecutions, userId, sessionId);
         tablePanel.updateTable(currentExecutions, userId);
 
         revalidate();

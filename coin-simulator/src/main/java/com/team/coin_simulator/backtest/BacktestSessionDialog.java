@@ -274,9 +274,19 @@ public class BacktestSessionDialog extends JDialog {
             showWarn("날짜 형식이 올바르지 않습니다. (yyyy-MM-dd HH:mm)"); return;
         }
 
-        // 최소 1개월 전 검증
+     // 최소 1개월 전 검증
         if (startTime.isAfter(LocalDateTime.now().minusMonths(1))) {
             showWarn("시작 날짜는 최소 1개월 이전이어야 합니다."); return;
+        }
+
+        // [추가] DB 분봉 데이터 존재 여부 및 하한선 검증
+        LocalDateTime earliestMinuteTime = dao.getEarliestCandleTime();
+        if (earliestMinuteTime == null) {
+            showWarn("DB에 1분봉 데이터가 존재하지 않아 백테스팅 세션을 생성할 수 없습니다."); return;
+        }
+        if (startTime.isBefore(earliestMinuteTime)) {
+            showWarn("해당 날짜에는 분봉 데이터가 존재하지 않습니다.\n(가장 오래된 1분봉: " + earliestMinuteTime.format(FMT) + ")");
+            return;
         }
 
         long seed;
@@ -328,7 +338,13 @@ public class BacktestSessionDialog extends JDialog {
      * 최대 30회 시도 후 실패 메시지를 출력합니다.
      */
     private void fillRandomDate() {
-        LocalDateTime earliest = dao.getEarliestCandleTime();
+LocalDateTime earliest = dao.getEarliestCandleTime();
+        
+        // 1분봉 데이터가 아예 없는 경우 처리
+        if (earliest == null) {
+            showWarn("DB에 1분봉 데이터가 존재하지 않습니다."); return;
+        }
+
         // 시작 가능 하한: DB 가장 오래된 날짜 또는 현재 -12개월 중 더 최근
         LocalDateTime lowerBound = earliest.isAfter(LocalDateTime.now().minusMonths(12))
                                    ? earliest
@@ -337,7 +353,7 @@ public class BacktestSessionDialog extends JDialog {
         LocalDateTime upperBound = LocalDateTime.now().minusMonths(1);
 
         if (!lowerBound.isBefore(upperBound)) {
-            showWarn("DB에 충분한 과거 데이터가 없습니다."); return;
+            showWarn("DB에 충분한 과거 분봉 데이터가 없습니다."); return;
         }
 
         long rangeMinutes = java.time.temporal.ChronoUnit.MINUTES.between(lowerBound, upperBound);

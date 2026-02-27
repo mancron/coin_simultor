@@ -299,6 +299,41 @@ public class ProfitLossDAO {
         } catch (SQLException e) { e.printStackTrace(); }
         return BigDecimal.ZERO;
     }
+    
+    /**
+     * 사용자 + 세션의 총 수수료 조회 (매수/매도 전체 포함)
+     *
+     * @param userId    사용자 ID
+     * @param sessionId 세션 ID
+     * @return 총 발생 수수료
+     */
+    public BigDecimal getTotalFee(String userId, long sessionId) {
+        String sql =
+            "SELECT SUM(e.fee) AS total_fee " +
+            "FROM executions e " +
+            "INNER JOIN orders o ON e.order_id = o.order_id " +
+            "WHERE o.user_id = ? " +
+            "  AND o.session_id = ?";
+
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+
+            pstmt.setString(1, userId);
+            pstmt.setLong(2, sessionId);
+
+            try (ResultSet rs = pstmt.executeQuery()) {
+                if (rs.next()) {
+                    BigDecimal totalFee = rs.getBigDecimal("total_fee");
+                    return totalFee != null ? totalFee : BigDecimal.ZERO;
+                }
+            }
+
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+
+        return BigDecimal.ZERO;
+    }
 
     // ── 공통 매핑 ───────────────────────────────────────────────
 

@@ -28,13 +28,16 @@ public class ProfitLoss_ChartAreaPanel extends JPanel {
     }
 
     /**
-     * 두 차트를 동시에 업데이트
-     * 
-     * @param executions 체결 내역 리스트
-     * @param userId 사용자 ID (초기 자본금 조회용)
+     * 두 차트를 동시에 업데이트 (sessionId 추가)
+     * * @param executions 체결 내역 리스트
+     * @param userId 사용자 ID
+     * @param sessionId 세션 ID (초기 자본금 조회용)
      */
-    public void updateCharts(List<ExecutionDTO> executions, String userId) {
-        yieldLineChart.updateData(executions, userId);
+    public void updateCharts(List<ExecutionDTO> executions, String userId, long sessionId) {
+        // 수익률 차트는 초기 자본금 조회를 위해 userId와 sessionId가 모두 필요함
+        yieldLineChart.updateData(executions, userId, sessionId);
+        
+        // 일별 손익 차트는 체결 내역의 금액 합산만 하므로 executions만 전달해도 무방함
         pnlBarChart.updateData(executions);
     }
 }
