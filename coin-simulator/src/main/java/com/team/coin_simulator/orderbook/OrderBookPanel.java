@@ -7,6 +7,7 @@ import com.team.coin_simulator.chart.CandleDTO;
 
 import java.awt.*;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.*;
 import java.util.List;
 import javax.swing.*;
@@ -227,30 +228,37 @@ public class OrderBookPanel extends JPanel
     private void refreshBacktestOrderBook(LocalDateTime simTime) {
         String market = "KRW-" + coinSymbol;
 
-        // 현재 시각 이전 1분봉 2개 조회 (현재 종가 + 직전 종가)
-        List<CandleDTO> candles =
-                candleDAO.getHistoricalCandles(market, 1, simTime, 2);
+        // 1. 현재 가격을 위한 최신 1분봉 조회
+        List<CandleDTO> currentCandles = candleDAO.getHistoricalCandles(market, 1, simTime, 1);
+        if (currentCandles == null || currentCandles.isEmpty()) return;
+        double closePrice = currentCandles.get(0).getTradePrice();
 
-        if (candles == null || candles.isEmpty()) {
-            System.out.println("[OrderBookPanel] 캔들 없음: " + market + " @ " + simTime);
-            return;
+        // 2. 전일 종가(기준점) 계산
+        // 업비트 기준일 변경은 한국 시간 오전 9시입니다.
+        LocalDateTime standardTime;
+        if (simTime.toLocalTime().isBefore(LocalTime.of(9, 0))) {
+            // 오전 9시 이전이면 '그저께 09:00'가 전일 종가 기준점
+            standardTime = simTime.toLocalDate().minusDays(1).atTime(9, 0);
+        } else {
+            // 오전 9시 이후면 '오늘 09:00'가 전일 종가 기준점
+            standardTime = simTime.toLocalDate().atTime(9, 0);
         }
 
-        double closePrice = candles.get(0).getTradePrice();
-        double prevClose  = candles.size() >= 2
-                ? candles.get(1).getTradePrice()
-                : closePrice;
+        // 기준 시간(09:00)의 직전 1분봉 종가를 가져옵니다.
+        List<CandleDTO> prevDayCandles = candleDAO.getHistoricalCandles(market, 1, standardTime, 1);
+        double prevDayClose = prevDayCandles.isEmpty() ? closePrice : prevDayCandles.get(0).getTradePrice();
 
-        // 종가가 동일하면 호가 가격 구조는 그대로 → 기존 물량 유지
-        if (closePrice == lastClosePrice) return;
+        // 종가가 이전과 동일하면 스킵 (성능 최적화)
+        if (closePrice == lastClosePrice && prevDayClose == lastPrevClosePrice) return;
 
-        lastClosePrice      = closePrice;
-        lastPrevClosePrice  = prevClose;
+        lastClosePrice = closePrice;
+        lastPrevClosePrice = prevDayClose;
 
-        // EDT에서 장부 재생성 후 화면 갱신
+        // EDT에서 화면 갱신
         SwingUtilities.invokeLater(() -> {
             generateOrderBook(closePrice);
-            updateData(backtestAsks, backtestBids, prevClose);
+            // 계산된 prevDayClose를 전달하여 등락률 계산에 사용
+            updateData(backtestAsks, backtestBids, prevDayClose);
         });
     }
 
@@ -402,10 +410,29 @@ public class OrderBookPanel extends JPanel
         double changeRate = prevClose > 0
                 ? ((price - prevClose) / prevClose) * 100
                 : 0.0;
-        String priceStr = String.format("%,.0f (%.2f%%)", price, changeRate);
+        String priceFormatted;
+        if (price % 1 == 0) {
+            // 소수점이 없는 경우 (예: 1,500원) -> 정수로 표시
+            priceFormatted = String.format("%,.0f", price);
+        } else {
+            // 소수점이 있는 경우 (예: 0.12345원) 
+            // 해당 가격의 호가 단위를 가져와서 자릿수 판단 (기존 getTickSize 활용)
+            double tickSize = getTickSize(price);
+            
+            if (tickSize >= 0.1) {
+                priceFormatted = String.format("%,.1f", price); // 소수점 1자리
+            } else if (tickSize >= 0.01) {
+                priceFormatted = String.format("%,.2f", price); // 소수점 2자리
+            } else {
+                priceFormatted = String.format("%,.5f", price); // 최대 5자리
+            }
+        }
+        String priceStr = String.format("%s (%+.2f%%)", priceFormatted, changeRate);
         model.addRow(new Object[]{priceStr, String.format("%.4f", volume)});
     }
 
+    
+    
     // ════════════════════════════════════════════════
     //  업비트 호가 단위 (KRW 마켓 기준)
     // ════════════════════════════════════════════════
