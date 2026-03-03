@@ -91,6 +91,12 @@ public class Asset_MainPanel extends JPanel implements UpbitWebSocketDao.TickerL
 
         refreshUI();
     }
+    
+    
+    
+    public void reloadBalancesFromDB() {
+        initAssetData(); 
+    }
 
     // ── 실시간 웹소켓 콜백 ─────────────────────────────────────────
     @Override

@@ -1,6 +1,7 @@
 package com.team.coin_simulator.Market_Order;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.sql.Connection;
 import java.sql.SQLException;
 
@@ -20,9 +21,12 @@ public class LimitOrder {
             conn.setAutoCommit(false); // 트랜잭션 시작
 
             try {
-                BigDecimal totalCost = price.multiply(qty);
-                String currency = (sideIdx == 0) ? "KRW" : "BTC";
-                BigDecimal requirement = (sideIdx == 0) ? totalCost : qty;
+            	BigDecimal totalCost = price.multiply(qty);
+            	if (sideIdx == 0) { // 매수(KRW 사용)일 경우 원화 소수점 버림
+            	    totalCost = totalCost.setScale(0, RoundingMode.DOWN);
+            	}
+            	String currency = (sideIdx == 0) ? "KRW" : "BTC";
+            	BigDecimal requirement = (sideIdx == 0) ? totalCost : qty;
 
                 // 1. 잔고 확인 (repo 사용)
                 if (!repo.hasEnoughBalance(conn, userId, currency, requirement)) {
@@ -74,8 +78,15 @@ public class LimitOrder {
                 updateStatus(conn, orderId, "CANCEL");
 
                 // 3. 자산 반환 (Locked 차감 -> Balance 증가)
-                BigDecimal amountToReturn = "BID".equals(side) ? price.multiply(qty) : qty;
-                String currency = "BID".equals(side) ? "KRW" : "BTC";
+                BigDecimal amountToReturn;
+                String currency;
+                if ("BID".equals(side)) { // 매수 대기 취소 시 원화 반환 (소수점 버림)
+                    amountToReturn = price.multiply(qty).setScale(0, RoundingMode.DOWN);
+                    currency = "KRW";
+                } else { // 매도 대기 취소 시 코인 반환
+                    amountToReturn = qty;
+                    currency = "BTC";
+                }
 
                 repo.updateLockedAsset(conn, userId, currency, amountToReturn.negate());
                 repo.updateBalance(conn, userId, currency, amountToReturn);
