@@ -70,6 +70,7 @@ public class JoinFrame extends JFrame {
 
             if (i == 4) {
                 field.setText("100000000");
+                field.setEnabled(false);
             }
 
             styleField(field, labels[i]);
