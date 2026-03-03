@@ -104,7 +104,7 @@ public class ProfitLoss_MainPanel extends JPanel {
     // ── UI 갱신 ───────────────────────────────────────────────────
 
     private void refreshAll() {
-        // 초기 자본금
+        // 초기 자본금 (수익률 계산의 기준점)
         long initialSeedMoney = dao.getInitialSeedMoney(userId, sessionId); 
 
         if (currentExecutions == null || currentExecutions.isEmpty()) {
@@ -114,22 +114,35 @@ public class ProfitLoss_MainPanel extends JPanel {
             return;
         }
 
-        // 총 실현 손익 및 총 수수료 조회
-        long totalPnl = dao.getTotalRealizedPnl(userId, sessionId).longValue(); 
-        long totalFee = dao.getTotalFee(userId, sessionId).longValue(); 
-        
-        // 순손익 도출
-        long netPnl = totalPnl - totalFee;
+        // [개념 분리] 선택된 기간의 실현 손익 및 수수료 직접 합산
+        // DB의 전체 누적이 아닌, 현재 화면에 로드된 기간(currentExecutions) 동안의 손익만 구함
+        long periodRealizedPnl = 0;
+        long periodFee = 0;
 
-        // 순손익 기반 수익률 계산
-        double totalYield = initialSeedMoney > 0
-            ? ((double) netPnl / initialSeedMoney) * 100
+        for (ExecutionDTO exec : currentExecutions) {
+            // 수수료: 매수/매도 모든 체결 건 합산
+            if (exec.getFee() != null) {
+                periodFee += exec.getFee().longValue();
+            }
+            // 실현손익: 매도(ASK) 체결 건만 합산
+            if ("ASK".equals(exec.getSide()) && exec.getRealizedPnl() != null) {
+                periodRealizedPnl += exec.getRealizedPnl().longValue();
+            }
+        }
+
+        // 기간 순손익 = 기간 내 실현손익 - 기간 내 수수료
+        long periodNetPnl = periodRealizedPnl - periodFee;
+
+        // 기간 수익률 = (해당 기간 순손익 / 초기 자본금) * 100
+        double periodYield = initialSeedMoney > 0
+            ? ((double) periodNetPnl / initialSeedMoney) * 100.0
             : 0.0;
 
-        long avgInvestment = initialSeedMoney + (netPnl / 2);
+        // 평균 투자금액 (단순 참고용 유지)
+        long avgInvestment = initialSeedMoney + (periodNetPnl / 2);
 
         // UI 갱신
-        summaryPanel.updateSummary(netPnl, totalYield, avgInvestment, totalFee);
+        summaryPanel.updateSummary(periodNetPnl, periodYield, avgInvestment, periodFee);
         chartAreaPanel.updateCharts(currentExecutions, userId, sessionId);
         tablePanel.updateTable(currentExecutions, userId);
 

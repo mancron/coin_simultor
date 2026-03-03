@@ -240,7 +240,15 @@ public class HistoryDAO {
         dto.setBuyAvgPrice(rs.getBigDecimal("buy_avg_price"));
         dto.setRealizedPnl(rs.getBigDecimal("realized_pnl"));
         dto.setRoi(rs.getBigDecimal("roi"));
-        dto.setExecutedAt(rs.getTimestamp("executed_at"));
+        
+        // [수정된 시간 처리 로직]
+        // JDBC가 타임존 차이로 임의로 더해버린 9시간(32,400,000 밀리초)을 다시 빼서 원상복구
+        java.sql.Timestamp ts = rs.getTimestamp("executed_at");
+        if (ts != null) {
+            long correctedTime = ts.getTime() - (9 * 60 * 60 * 1000L); 
+            dto.setExecutedAt(new java.sql.Timestamp(correctedTime));
+        }
+
         return dto;
     }
 }
