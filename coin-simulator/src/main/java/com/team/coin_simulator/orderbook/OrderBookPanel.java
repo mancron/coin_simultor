@@ -52,6 +52,16 @@ public class OrderBookPanel extends JPanel
     /** 현재 캔들 종가 (같은 가격이면 재생성 스킵) */
     private volatile double lastClosePrice = 0;
 
+    public interface PriceClickListener {
+        void onPriceClicked(java.math.BigDecimal price);
+    }
+
+    private PriceClickListener priceClickListener;
+
+    public void setPriceClickListener(PriceClickListener listener) {
+        this.priceClickListener = listener;
+    }
+    
     private final CandleDAO candleDAO = new CandleDAO();
 
     // ════════════════════════════════════════════════
@@ -121,6 +131,28 @@ public class OrderBookPanel extends JPanel
         table.getColumnModel().getColumn(0).setCellRenderer(center);
         table.getColumnModel().getColumn(1).setCellRenderer(center);
 
+        table.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override
+            public void mouseClicked(java.awt.event.MouseEvent e) {
+                int row = table.rowAtPoint(e.getPoint());
+                if (row < 0) return;
+                Object val = table.getValueAt(row, 0); // 첫 번째 컬럼 = 가격
+                if (val == null) return;
+                try {
+                	String raw = val.toString();
+                	// "52,000,000 (+1.23%)" 에서 괄호 앞 가격 부분만 추출
+                	if (raw.contains("(")) {
+                	    raw = raw.substring(0, raw.indexOf("(")).trim();
+                	}
+                	raw = raw.replace(",", ""); // 쉼표 제거
+                	java.math.BigDecimal price = new java.math.BigDecimal(raw);
+                    if (priceClickListener != null) {
+                        priceClickListener.onPriceClicked(price);
+                    }
+                } catch (NumberFormatException ignored) {}
+            }
+        });
+        
         return table;
     }
 
