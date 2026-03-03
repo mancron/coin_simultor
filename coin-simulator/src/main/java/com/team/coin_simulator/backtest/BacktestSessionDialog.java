@@ -196,6 +196,7 @@ public class BacktestSessionDialog extends JDialog {
         // 초기 자본금
         panel.add(makeLabel("초기 자본금 (KRW)"));
         tfSeedMoney = makeTf("100000000");
+        tfSeedMoney.setEnabled(false);
         panel.add(tfSeedMoney);
         panel.add(Box.createVerticalStrut(12));
 
