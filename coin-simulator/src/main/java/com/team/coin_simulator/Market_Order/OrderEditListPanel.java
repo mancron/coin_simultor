@@ -257,6 +257,8 @@ public class OrderEditListPanel extends JPanel {
             JOptionPane.showMessageDialog(this, "취소 처리에 실패했습니다. (이미 체결되었을 수 있습니다.)", "오류", JOptionPane.ERROR_MESSAGE);
         }
     }
+    
+    
 
     private void showModifyDialog(OrderDTO order, String coinCode) {
         JPanel panel = new JPanel(new GridLayout(2, 2, 5, 5));
