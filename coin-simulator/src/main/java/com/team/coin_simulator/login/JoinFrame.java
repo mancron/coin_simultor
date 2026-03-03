@@ -70,6 +70,7 @@ public class JoinFrame extends JFrame {
 
             if (i == 4) {
                 field.setText("100000000");
+                field.setEnabled(false);
             }
 
             styleField(field, labels[i]);
@@ -103,6 +104,24 @@ public class JoinFrame extends JFrame {
                     JOptionPane.showMessageDialog(JoinFrame.this, "모든 정보를 빠짐없이 입력해주세요.", "입력 오류", JOptionPane.WARNING_MESSAGE);
                     return;
                 }
+
+                // ✅ (추가) 이메일 형식 강제
+                if (!isValidEmail(email)) {
+                    JOptionPane.showMessageDialog(JoinFrame.this,
+                            "아이디는 이메일 형식이어야 합니다.\n예) qwer@naver.com",
+                            "입력 오류", JOptionPane.WARNING_MESSAGE);
+                    return;
+                }
+
+                // ✅ (추가) 휴대폰 11자리 강제 + 숫자만 남기기
+                String cleanPhone = phone.replaceAll("[^0-9]", "");
+                if (!isValidPhone(cleanPhone)) {
+                    JOptionPane.showMessageDialog(JoinFrame.this,
+                            "휴대폰 번호는 '-' 없이 숫자 11자리로 입력해주세요.\n예) 01012345678",
+                            "입력 오류", JOptionPane.WARNING_MESSAGE);
+                    return;
+                }
+                phone = cleanPhone; // 이후 DB 저장도 정제된 값으로
 
                 // 2) 초기 투자금액 검사
                 BigDecimal initialAsset;
@@ -156,7 +175,7 @@ public class JoinFrame extends JFrame {
                 user.setPassword(pw);
                 user.setNickname(email.split("@")[0]);
 
-                // 6) users 테이블에 회원 등록
+                // 6) users 테이블에 회원 등록 (폰번호는 파라미터로 저장)
                 boolean userCreated = userDAO.insertUser(user, phone);
 
                 if (!userCreated) {
@@ -184,8 +203,8 @@ public class JoinFrame extends JFrame {
 
                     // ✅ 8) 실시간 세션의 ID로 초기 자산 생성
                     boolean assetCreated = AssetDAO.createInitialAsset(
-                            email, 
-                            realtimeSession.getSessionId(), 
+                            email,
+                            realtimeSession.getSessionId(),
                             initialAsset
                     );
 
@@ -209,7 +228,7 @@ public class JoinFrame extends JFrame {
                 } catch (Exception ex) {
                     System.err.println("[JoinFrame] 세션 또는 자산 생성 중 오류 발생: " + ex.getMessage());
                     ex.printStackTrace();
-                    
+
                     JOptionPane.showMessageDialog(JoinFrame.this,
                             "회원가입은 완료되었으나 초기 설정 중 오류가 발생했습니다.\n" +
                             "로그인 후 자산을 확인해주세요.",
@@ -248,6 +267,19 @@ public class JoinFrame extends JFrame {
     private boolean isValidPassword(String password) {
         String regex = "^(?=.*[A-Za-z])(?=.*\\d)(?=.*[!@#$%^&*])[A-Za-z\\d!@#$%^&*]{8,16}$";
         return password.matches(regex);
+    }
+
+    // ✅ (추가) 이메일 형식 검증
+    private boolean isValidEmail(String email) {
+        if (email == null) return false;
+        email = email.trim();
+        return email.matches("^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$");
+    }
+
+    // ✅ (추가) 휴대폰 11자리 검증(010~019 포함)
+    private boolean isValidPhone(String digits11) {
+        if (digits11 == null) return false;
+        return digits11.matches("^01[0-9]{9}$");
     }
 
     private void styleField(JTextField field, String title) {
