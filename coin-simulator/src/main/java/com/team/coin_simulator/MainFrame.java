@@ -303,10 +303,15 @@ public class MainFrame extends JFrame {
 
         orderPanel = new OrderPanel(currentUserId, false);
         orderPanel.setPreferredSize(new Dimension(350, 0));
-
+        
         panel.add(historyPanel,  BorderLayout.WEST);
         panel.add(centerArea,    BorderLayout.CENTER);
         panel.add(orderPanel,    BorderLayout.EAST);
+        orderBookPanel.setPriceClickListener(price -> {
+            if (orderPanel != null) {
+                orderPanel.setLimitPriceFromOrderBook(price);
+            }
+        });
         return panel;
     }
 
@@ -482,6 +487,11 @@ public class MainFrame extends JFrame {
         JPanel centerArea = (JPanel) ((JPanel) tradingPanel.getComponent(1));
         centerArea.remove(1);
         centerArea.add(orderBookPanel, BorderLayout.SOUTH);
+        orderBookPanel.setPriceClickListener(price -> {
+            if (orderPanel != null) {
+                orderPanel.setLimitPriceFromOrderBook(price);
+            }
+        });
         centerArea.revalidate();
         centerArea.repaint();
     }

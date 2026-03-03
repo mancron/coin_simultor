@@ -27,6 +27,8 @@ public class OrderPanel extends JPanel implements UpbitWebSocketDao.TickerListen
     private Map<Long, String> orderCoinMap = new HashMap<>();
 
     private CardLayout cardLayout;
+    private CardLayout tradeCardLayout;
+    private JPanel tradeInputPanel;
     private JPanel inputCardPanel;
     private JTextField priceField, qtyField, marketAmountField;
     private JLabel valAvailable, valTotal, valExpected, lblSelectedCoinInfo, lblMarketUnit;
@@ -115,8 +117,8 @@ public class OrderPanel extends JPanel implements UpbitWebSocketDao.TickerListen
         modePanel.add(btnLimit); modePanel.add(btnMarket);
         tradePanel.add(modePanel); tradePanel.add(Box.createVerticalStrut(20));
 
-        CardLayout tradeCardLayout = new CardLayout();
-        JPanel tradeInputPanel = new JPanel(tradeCardLayout);
+        tradeCardLayout = new CardLayout();
+        tradeInputPanel = new JPanel(tradeCardLayout);
         tradeInputPanel.add(createLimitForm(), "LIMIT");
         tradeInputPanel.add(createMarketForm(), "MARKET");
         tradePanel.add(tradeInputPanel);
@@ -691,6 +693,19 @@ List<AssetDTO> assets = assetDAO.getAllAssets(this.userId, getSessionId());
         return this.currentSelectedPrice;
     }
     
+    // 호가창에서 가격 클릭 시 지정가 입력란에 가격을 설정
+    public void setLimitPriceFromOrderBook(BigDecimal price) {
+        if (price == null || price.compareTo(BigDecimal.ZERO) <= 0) return;
+        SwingUtilities.invokeLater(() -> {
+            // 지정가 탭으로 강제 전환
+            isLimitMode = true;
+            tradeCardLayout.show(tradeInputPanel, "LIMIT");
+
+            // 가격 필드에 값 세팅
+            priceField.setText(price.stripTrailingZeros().toPlainString());
+            updateOrderSummary();
+        });
+    }
     
     private void triggerMainFrameRefresh() {
         SwingUtilities.invokeLater(() -> {
