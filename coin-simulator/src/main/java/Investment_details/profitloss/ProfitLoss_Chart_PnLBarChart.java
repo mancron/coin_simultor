@@ -116,11 +116,9 @@ public class ProfitLoss_Chart_PnLBarChart extends JPanel {
             // 1. 매도(ASK) 시 실현 손익 추가
             if ("ASK".equals(exec.getSide()) && exec.getRealizedPnl() != null) {
                 netPnl = netPnl.add(exec.getRealizedPnl());
-            }
-            
-            // 2. 수수료(fee) 차감 (매수, 매도 공통)
-            if (exec.getFee() != null) {
-                netPnl = netPnl.subtract(exec.getFee());
+                // realized_pnl에 매도 수수료가 이미 포함되어 있으므로 추가 차감 불필요
+            } else if ("BID".equals(exec.getSide()) && exec.getFee() != null) {
+                netPnl = netPnl.subtract(exec.getFee()); // 매수 수수료만 별도 차감
             }
             
             String dateKey = sdf.format(exec.getExecutedAt());

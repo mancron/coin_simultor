@@ -110,7 +110,7 @@ public class ProfitLoss_MainPanel extends JPanel {
         if (currentExecutions == null || currentExecutions.isEmpty()) {
             summaryPanel.updateSummary(0, 0.0, initialSeedMoney, 0); 
             chartAreaPanel.updateCharts(currentExecutions, userId, sessionId);
-            tablePanel.updateTable(currentExecutions, userId);
+            tablePanel.updateTable(currentExecutions, userId, sessionId);
             return;
         }
 
@@ -144,7 +144,7 @@ public class ProfitLoss_MainPanel extends JPanel {
         // UI 갱신
         summaryPanel.updateSummary(periodNetPnl, periodYield, avgInvestment, periodFee);
         chartAreaPanel.updateCharts(currentExecutions, userId, sessionId);
-        tablePanel.updateTable(currentExecutions, userId);
+        tablePanel.updateTable(currentExecutions, userId, sessionId);
 
         revalidate();
         repaint();

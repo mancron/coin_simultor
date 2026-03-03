@@ -152,89 +152,169 @@ public class ProfitLoss_DetailTablePanel extends JPanel {
     /**
      * ExecutionDTO 리스트로 테이블 업데이트
      */
-    public void updateTable(List<ExecutionDTO> executions, String userId) {
+    public void updateTable(List<ExecutionDTO> executions, String userId, long sessionId) {
         tableModel.setRowCount(0);
         if (executions == null || executions.isEmpty()) return;
 
-        // 초기 자본금 조회
-        long initialSeedMoney = dao.getInitialSeedMoney(userId);
+        long initialSeedMoney = dao.getInitialSeedMoney(userId, sessionId);
 
-        // [수정] 정방향 누적 계산을 위해 오름차순 정렬 (TreeMap 기본 설정)
-        Map<Date, BigDecimal> dailyPnlMap = new TreeMap<>();
-        
-        for (ExecutionDTO exec : executions) {
-            Date date = new Date(exec.getExecutedAt().getTime());
-            Calendar cal = Calendar.getInstance();
-            cal.setTime(date);
-            cal.set(Calendar.HOUR_OF_DAY, 0);
-            cal.set(Calendar.MINUTE, 0);
-            cal.set(Calendar.SECOND, 0);
-            cal.set(Calendar.MILLISECOND, 0);
-            Date dateOnly = cal.getTime();
-            
-            BigDecimal netPnl = BigDecimal.ZERO;
-            
-            // 1. 매도인 경우 실현 손익 추가
-            if ("ASK".equals(exec.getSide()) && exec.getRealizedPnl() != null) {
-                netPnl = netPnl.add(exec.getRealizedPnl());
-            }
-            
-            // 2. 수수료 차감 (매수, 매도 모두 적용)
-            if (exec.getFee() != null) {
-                netPnl = netPnl.subtract(exec.getFee());
-            }
-            
-            dailyPnlMap.merge(dateOnly, netPnl, BigDecimal::add);
+        // ── 1. 오름차순 정렬 (과거 → 최신, 상태 누적용) ─────────────────
+        List<ExecutionDTO> sorted = new ArrayList<>(executions);
+        sorted.sort(Comparator.comparing(ExecutionDTO::getExecutedAt));
+
+        // ── 2. 날짜별 그룹화 ────────────────────────────────────────────
+        // LinkedHashMap → 오름차순 유지
+        Map<Date, List<ExecutionDTO>> dailyMap = new LinkedHashMap<>();
+        for (ExecutionDTO exec : sorted) {
+            Date dateOnly = truncateToDay(exec.getExecutedAt());
+            dailyMap.computeIfAbsent(dateOnly, k -> new ArrayList<>()).add(exec);
         }
+
+        // ── 3. 상태 추적용 변수 ─────────────────────────────────────────
+        // KRW 잔고 (초기자본으로 시작)
+        BigDecimal krwBalance = new BigDecimal(initialSeedMoney);
+
+        // 코인별 보유수량 & 평단가
+        Map<String, BigDecimal> coinQty = new HashMap<>();
+        Map<String, BigDecimal> coinAvg = new HashMap<>();
 
         BigDecimal cumulativePnl = BigDecimal.ZERO;
-        long currentAsset = initialSeedMoney;
 
-        // 과거부터 최신순으로 누적 합산 진행
-        for (Map.Entry<Date, BigDecimal> entry : dailyPnlMap.entrySet()) {
-            String dateStr = sdf.format(entry.getKey());
-            BigDecimal dailyPnl = entry.getValue();
-            
-            // [수정] 소수점 버림으로 인한 오차 방지를 위해 반올림 후 long 캐스팅
-            long dailyPnlRounded = dailyPnl.setScale(0, RoundingMode.HALF_UP).longValue();
-            
-            long baseAsset = currentAsset; // 기초자산
-            
+        // 최신순 표시를 위해 행을 별도 리스트에 모은 뒤 역순 삽입
+        List<Object[]> rows = new ArrayList<>();
+
+        // ── 4. 날짜별 반복 ─────────────────────────────────────────────
+        for (Map.Entry<Date, List<ExecutionDTO>> entry : dailyMap.entrySet()) {
+            Date date = entry.getKey();
+            List<ExecutionDTO> dayExecs = entry.getValue();
+
+            // 하루 시작 시점의 자산 스냅샷 (기초자산 계산용)
+            BigDecimal baseKrw = krwBalance;
+            Map<String, BigDecimal> baseCoinQty = new HashMap<>(coinQty);
+            Map<String, BigDecimal> baseCoinAvg = new HashMap<>(coinAvg);
+
+            BigDecimal dailyPnl = BigDecimal.ZERO;
+
+            // ── 4-1. 당일 체결 처리 ────────────────────────────────────
+            for (ExecutionDTO exec : dayExecs) {
+                String coin = exec.getMarket() != null
+                        ? exec.getMarket().replace("KRW-", "") : "UNKNOWN";
+                BigDecimal fee  = exec.getFee()    != null ? exec.getFee()    : BigDecimal.ZERO;
+                BigDecimal price  = exec.getPrice()  != null ? exec.getPrice()  : BigDecimal.ZERO;
+                BigDecimal volume = exec.getVolume() != null ? exec.getVolume() : BigDecimal.ZERO;
+
+                if ("BID".equals(exec.getSide())) {
+                    // 매수: KRW 차감(원금 + 수수료), 코인 증가, 평단가 갱신
+                    BigDecimal totalCost = price.multiply(volume).add(fee);
+                    krwBalance = krwBalance.subtract(totalCost);
+
+                    BigDecimal prevQty = coinQty.getOrDefault(coin, BigDecimal.ZERO);
+                    BigDecimal prevAvg = coinAvg.getOrDefault(coin, BigDecimal.ZERO);
+                    BigDecimal newQty  = prevQty.add(volume);
+
+                    if (newQty.compareTo(BigDecimal.ZERO) > 0) {
+                        // 가중평균 평단가
+                        BigDecimal newAvg = prevQty.multiply(prevAvg)
+                                .add(volume.multiply(price))
+                                .divide(newQty, 8, RoundingMode.HALF_UP);
+                        coinAvg.put(coin, newAvg);
+                    }
+                    coinQty.put(coin, newQty);
+
+                    // [Bug 1 수정] 매수 수수료만 일손익에 반영 (realized_pnl 없음)
+                    dailyPnl = dailyPnl.subtract(fee);
+
+                } else if ("ASK".equals(exec.getSide())) {
+                    // 매도: KRW 증가(매도대금 - 수수료), 코인 감소
+                    BigDecimal proceeds = price.multiply(volume).subtract(fee);
+                    krwBalance = krwBalance.add(proceeds);
+
+                    BigDecimal prevQty = coinQty.getOrDefault(coin, BigDecimal.ZERO);
+                    BigDecimal newQty  = prevQty.subtract(volume);
+                    coinQty.put(coin, newQty.compareTo(BigDecimal.ZERO) < 0
+                            ? BigDecimal.ZERO : newQty);
+
+                    // 전량 매도 시 평단가 초기화
+                    if (coinQty.get(coin).compareTo(BigDecimal.ZERO) <= 0) {
+                        coinAvg.put(coin, BigDecimal.ZERO);
+                    }
+
+                    // [Bug 1 수정] realized_pnl에 이미 매도 수수료가 포함되어 있으므로
+                    // fee를 별도 차감하지 않음
+                    if (exec.getRealizedPnl() != null) {
+                        dailyPnl = dailyPnl.add(exec.getRealizedPnl());
+                    }
+                }
+            }
+
             cumulativePnl = cumulativePnl.add(dailyPnl);
-            long cumulativePnlRounded = cumulativePnl.setScale(0, RoundingMode.HALF_UP).longValue();
-            
-            currentAsset = initialSeedMoney + cumulativePnlRounded; // 기말자산
 
-            // 일일 수익률 (기초 자산 기준)
-            double dailyYield = baseAsset > 0 
-                ? ((double) dailyPnlRounded / baseAsset) * 100 
-                : 0.0;
+            // ── 4-2. [Bug 2 수정] 기초·기말 자산 = KRW + 보유코인 평가금액 ──
 
-            // 누적 수익률 (초기 자본금 기준)
-            double cumulativeYield = initialSeedMoney > 0
-                ? ((double) cumulativePnlRounded / initialSeedMoney) * 100
-                : 0.0;
+            // 기초자산: 하루 시작 KRW + 하루 시작 코인 보유 × 평단가
+            BigDecimal baseAsset = baseKrw.add(evalCoins(baseCoinQty, baseCoinAvg));
 
-            // 포맷팅
-            String dpStr = (dailyPnlRounded > 0 ? "+" : "") + 
-                          String.format("%,d", dailyPnlRounded);
-            String dyStr = (dailyYield > 0 ? "+" : "") + 
-                          String.format("%.2f%%", dailyYield);
-            String cpStr = (cumulativePnlRounded > 0 ? "+" : "") + 
-                          String.format("%,d", cumulativePnlRounded);
-            String cyStr = (cumulativeYield > 0 ? "+" : "") + 
-                          String.format("%.2f%%", cumulativeYield);
+            // 기말자산: 하루 끝 KRW + 하루 끝 코인 보유 × 평단가
+            BigDecimal endAsset  = krwBalance.add(evalCoins(coinQty, coinAvg));
 
-            // [수정] UI상 최신 날짜가 위로 올라오도록 0번째 행(최상단)에 삽입
-            tableModel.insertRow(0, new Object[]{
-                    dateStr,
-                    dpStr,
-                    dyStr,
-                    cpStr,
-                    cyStr,
-                    String.format("%,d", baseAsset),
-                    String.format("%,d", currentAsset)
+            // ── 4-3. 수익률 계산 ────────────────────────────────────────
+            long dailyPnlLong  = dailyPnl.setScale(0, RoundingMode.HALF_UP).longValue();
+            long cumPnlLong    = cumulativePnl.setScale(0, RoundingMode.HALF_UP).longValue();
+            long baseAssetLong = baseAsset.setScale(0, RoundingMode.HALF_UP).longValue();
+            long endAssetLong  = endAsset.setScale(0, RoundingMode.HALF_UP).longValue();
+
+            double dailyYield = baseAssetLong > 0
+                    ? ((double) dailyPnlLong / baseAssetLong) * 100 : 0.0;
+            double cumYield   = initialSeedMoney > 0
+                    ? ((double) cumPnlLong / initialSeedMoney) * 100 : 0.0;
+
+            // ── 4-4. 포맷팅 ─────────────────────────────────────────────
+            String dpStr = (dailyPnlLong >= 0 ? "+" : "") + String.format("%,d", dailyPnlLong);
+            String dyStr = (dailyYield  >= 0 ? "+" : "") + String.format("%.2f%%", dailyYield);
+            String cpStr = (cumPnlLong  >= 0 ? "+" : "") + String.format("%,d", cumPnlLong);
+            String cyStr = (cumYield    >= 0 ? "+" : "") + String.format("%.2f%%", cumYield);
+
+            rows.add(new Object[]{
+                    sdf.format(date),
+                    dpStr, dyStr,
+                    cpStr, cyStr,
+                    String.format("%,d", baseAssetLong),
+                    String.format("%,d", endAssetLong)
             });
         }
+
+        // ── 5. 최신순(역순)으로 테이블에 삽입 ─────────────────────────
+        for (int i = rows.size() - 1; i >= 0; i--) {
+            tableModel.addRow(rows.get(i));
+        }
     }
+
+    // ── 헬퍼: 날짜 시각 절사 ─────────────────────────────────────────────
+    private Date truncateToDay(java.sql.Timestamp ts) {
+        Calendar cal = Calendar.getInstance();
+        cal.setTime(ts);
+        cal.set(Calendar.HOUR_OF_DAY, 0);
+        cal.set(Calendar.MINUTE, 0);
+        cal.set(Calendar.SECOND, 0);
+        cal.set(Calendar.MILLISECOND, 0);
+        return cal.getTime();
+    }
+
+    // ── 헬퍼: 코인 포지션 평가금액 합산 ─────────────────────────────────
+    private BigDecimal evalCoins(Map<String, BigDecimal> qtys, Map<String, BigDecimal> avgs) {
+        BigDecimal total = BigDecimal.ZERO;
+        for (Map.Entry<String, BigDecimal> e : qtys.entrySet()) {
+            BigDecimal qty = e.getValue();
+            BigDecimal avg = avgs.getOrDefault(e.getKey(), BigDecimal.ZERO);
+            if (qty.compareTo(BigDecimal.ZERO) > 0 && avg.compareTo(BigDecimal.ZERO) > 0) {
+                total = total.add(qty.multiply(avg));
+            }
+        }
+        return total;
+    }
+    
+    
+    
+    
+    
 }
