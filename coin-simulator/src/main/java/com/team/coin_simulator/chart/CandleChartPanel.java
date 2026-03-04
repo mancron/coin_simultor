@@ -131,6 +131,11 @@ public class CandleChartPanel extends JPanel {
     private final List<CandleDTO> ghostCandles  = new ArrayList<>();
     private static final int MAX_GHOST_CANDLES  = 10;
 
+    /*백테스팅 미완성봉 패치 캐시*/
+    private LocalDateTime lastPatchedBlockStart = null;
+    private List<CandleDTO> lastPatchedMinutes  = null;
+    private LocalDateTime lastPatchedTargetTime = null;
+
     /*실시간 타이머*/
     private Timer liveTimer;
     private static final int LIVE_RENDER_MS = 500;
@@ -449,9 +454,7 @@ public class CandleChartPanel extends JPanel {
     }
 
 
-    // ════════════════════════════════════════════════════
-    //  ★ 보조지표 계산
-    // ════════════════════════════════════════════════════
+    /*보조지표 계산 로직*/
 
     /**
      * 단순 이동평균 (SMA).
@@ -512,7 +515,7 @@ public class CandleChartPanel extends JPanel {
 
 
     // ════════════════════════════════════════════════════
-    //  ★ 보조지표 렌더링 (OverlayChartPanel 내부에서 호출)
+    //  보조지표 렌더링 (OverlayChartPanel 내부에서 호출)
     // ════════════════════════════════════════════════════
 
     /**
@@ -544,12 +547,12 @@ public class CandleChartPanel extends JPanel {
         Shape oldClip = g2.getClip();
         g2.setClip(plotArea);
         
-        // ── 볼린저 밴드 (MA선 아래에 먼저 그려 MA가 위에 올라오게) ──
+        // 볼린저 밴드 (MA선 아래에 먼저 그려 MA가 위에 올라오게)
         if (showBollinger) {
             drawBollingerBands(g2, plotArea, xAxis, yAxis, xMs, closes);
         }
 
-        // ── 이동평균선 ──
+        // 이동평균선
         if (showMA5)  drawMALine(g2, plotArea, xAxis, yAxis, xMs, calcMA(closes, 5),
                                   new Color(255, 165, 0), "MA5");
         if (showMA20) drawMALine(g2, plotArea, xAxis, yAxis, xMs, calcMA(closes, 20),
@@ -557,7 +560,7 @@ public class CandleChartPanel extends JPanel {
         if (showMA60) drawMALine(g2, plotArea, xAxis, yAxis, xMs, calcMA(closes, 60),
                                   new Color(148, 0, 211), "MA60");
 
-        // ── 거래량 (캔들 차트 하단 18% 영역에 오버레이) ──
+        // 거래량 (캔들 차트 하단 18% 영역에 오버레이)
         if (showVolume) {
             drawVolumeOverlay(g2, plotArea, xAxis, dataset, xMs, volumes);
         }
@@ -904,12 +907,91 @@ public class CandleChartPanel extends JPanel {
 
         List<CandleDTO> processed = new ArrayList<>(applyResample(timeframe, raw));
 
+        // 백테스팅 모드 + 1분 이외 타임프레임: 미완성 마지막 봉을 1분봉으로 재조합
+        if (targetTime != null && timeframe != TF_1M) {
+            processed = patchIncompleteLastCandle(market, timeframe, processed, targetTime);
+        }
+
         if (targetTime == null) {
             mergeGhostCandles(processed);
             if (liveCandle != null) return mergeWithLiveCandle(market, timeframe, processed);
         }
 
         return buildDataset(market, processed);
+    }
+
+    /**
+     * 백테스팅 모드에서 마지막 봉이 targetTime 기준으로 아직 미완성인 경우,
+     * 해당 봉 구간의 1분봉을 DB에서 조회해 OHLC를 재조합합니다.
+     *
+     * 예) 30분봉, targetTime=12:15 → 12:00봉은 미완성
+     *     → 12:00~12:15 사이의 1분봉으로 open/high/low/close 재계산
+     *
+     * 성능: 같은 블록 안에서는 DB 재조회 없이 캐시된 분봉을 targetTime까지 필터링만 합니다.
+     */
+    private List<CandleDTO> patchIncompleteLastCandle(String market, int timeframe,
+                                                       List<CandleDTO> processed,
+                                                       LocalDateTime targetTime) {
+        if (processed.isEmpty()) return processed;
+
+        CandleDTO lastCandle = processed.get(processed.size() - 1);
+        LocalDateTime blockStart = lastCandle.getCandleDateTimeKst();
+
+        // 마지막 봉의 블록 끝 시각 계산
+        LocalDateTime blockEnd = (timeframe == TF_1MON)
+                ? blockStart.plusMonths(1)
+                : blockStart.plusMinutes(timeframe);
+
+        // targetTime이 블록 끝 이후라면 이미 완성된 봉 → 패치 불필요
+        if (!targetTime.isBefore(blockEnd)) return processed;
+
+        // ── 패치 캐시 관리 ──
+        // 블록이 바뀌었으면 DB에서 새로 조회
+        if (!blockStart.equals(lastPatchedBlockStart)) {
+            lastPatchedMinutes    = candleDAO.getCandlesInRangeHistorical(
+                    market, TF_1M, blockStart, blockEnd.minusMinutes(1), blockEnd.minusMinutes(1));
+            lastPatchedBlockStart = blockStart;
+        }
+        // targetTime 이하인 분봉만 필터링 (매 틱 DB 재조회 없이 처리)
+        final LocalDateTime cutoff = targetTime;
+        List<CandleDTO> minuteCandles = new java.util.ArrayList<>();
+        if (lastPatchedMinutes != null) {
+            for (CandleDTO m : lastPatchedMinutes) {
+                if (!m.getCandleDateTimeKst().isAfter(cutoff)) minuteCandles.add(m);
+            }
+        }
+        lastPatchedTargetTime = targetTime;
+
+        if (minuteCandles.isEmpty()) return processed;
+
+        // 1분봉으로 OHLC 재조합
+        CandleDTO patched = new CandleDTO();
+        patched.setMarket(lastCandle.getMarket());
+        patched.setCandleDateTimeKst(blockStart);
+        patched.setCandleDateTimeUtc(lastCandle.getCandleDateTimeUtc());
+        patched.setOpeningPrice(minuteCandles.get(0).getOpeningPrice());
+        patched.setTradePrice(minuteCandles.get(minuteCandles.size() - 1).getTradePrice());
+        patched.setHighPrice(minuteCandles.stream().mapToDouble(CandleDTO::getHighPrice).max().orElse(0));
+        patched.setLowPrice(minuteCandles.stream().mapToDouble(CandleDTO::getLowPrice).min().orElse(0));
+        patched.setCandleAccTradeVolume(minuteCandles.stream().mapToDouble(CandleDTO::getCandleAccTradeVolume).sum());
+        patched.setUnit(timeframe);
+
+        processed.set(processed.size() - 1, patched);
+        return processed;
+    }
+
+    /**
+     * 주어진 시각이 속하는 타임프레임 블록의 시작 시각을 반환합니다.
+     * 블록 경계 감지(캐시 무효화 타이밍 판단)에 사용됩니다.
+     */
+    private LocalDateTime calcBlockStartTime(LocalDateTime time, int timeframe) {
+        if (timeframe == TF_1MON) {
+            return time.withDayOfMonth(1).withHour(0).withMinute(0).withSecond(0).withNano(0);
+        }
+        LocalDateTime KST_EPOCH = LocalDateTime.of(1970, 1, 1, 9, 0);
+        long epochMinutes = ChronoUnit.MINUTES.between(KST_EPOCH, time);
+        long blockIdx     = (epochMinutes / timeframe) * timeframe;
+        return KST_EPOCH.plusMinutes(blockIdx);
     }
 
     private OHLCDataset fallbackDataset(String market, int timeframe, LocalDateTime targetTime) {
@@ -1544,7 +1626,25 @@ public class CandleChartPanel extends JPanel {
         disconnectWebSocket();
         liveCandle = null;
         liveCandleMinuteStart = null;
-        resetAllCaches();
+
+        // 블록 경계를 넘는 순간에만 캐시 무효화
+        if (backtestTargetTime != null && currentTimeframe != TF_1M) {
+            LocalDateTime prevBlock = calcBlockStartTime(backtestTargetTime, currentTimeframe);
+            LocalDateTime nextBlock = calcBlockStartTime(targetTime, currentTimeframe);
+            if (!prevBlock.equals(nextBlock)) {
+                resetCache(dbUnitOf(currentTimeframe));
+                // 패치 캐시도 초기화
+                lastPatchedBlockStart = null;
+                lastPatchedMinutes    = null;
+                lastPatchedTargetTime = null;
+            }
+        } else {
+            resetAllCaches();
+            lastPatchedBlockStart = null;
+            lastPatchedMinutes    = null;
+            lastPatchedTargetTime = null;
+        }
+
         this.backtestTargetTime = targetTime;
 
         SwingUtilities.invokeLater(() -> {
